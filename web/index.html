@@ -22,11 +22,12 @@
 
 <!-- Login screen -->
 <div id="loginScreen" class="login-screen">
+  <select class="lang-select login-lang" aria-label="Language"></select>
   <form id="loginForm" class="login-box">
     <h1>WebSSH</h1>
-    <input id="loginUser" type="text" placeholder="Username" autocomplete="username" required />
-    <input id="loginPass" type="password" placeholder="Password" autocomplete="current-password" required />
-    <button type="submit">Sign in</button>
+    <input id="loginUser" type="text" data-i18n-placeholder="login.username" placeholder="Username" autocomplete="username" required />
+    <input id="loginPass" type="password" data-i18n-placeholder="login.password" placeholder="Password" autocomplete="current-password" required />
+    <button type="submit" data-i18n="login.submit">Sign in</button>
     <p id="loginError" class="error"></p>
   </form>
   <p id="buildVersionTag" class="build-version-tag"></p>
@@ -35,37 +36,38 @@
 <!-- Main app -->
 <div id="app" class="app hidden">
   <button id="sidebarToggle" class="sidebar-toggle" title="Collapse sidebar">‹</button>
-  <div id="sidebarResizer" class="sidebar-resizer" title="Drag to resize"></div>
+  <div id="sidebarResizer" class="sidebar-resizer" data-i18n-title="sidebar.resize" title="Drag to resize"></div>
   <div class="sidebar">
     <div class="sidebar-search">
       <div class="sidebar-search-inner" id="sidebarSearchWrap">
         <span class="search-icon">🔍</span>
-        <input id="sidebarSearch" type="text" placeholder="Search sessions & tunnels…" autocomplete="off" />
-        <button id="btnSearchClear" class="search-clear" title="Clear search">✕</button>
+        <input id="sidebarSearch" type="text" data-i18n-placeholder="search.placeholder" placeholder="Search sessions & tunnels…" autocomplete="off" />
+        <button id="btnSearchClear" class="search-clear" data-i18n-title="search.clear" title="Clear search">✕</button>
       </div>
     </div>
 
     <div class="sidebar-header">
-      <span>Sessions</span>
+      <span data-i18n="sessions.title">Sessions</span>
       <div class="sidebar-actions">
-        <button title="New group" id="btnNewGroup">＋Group</button>
-        <button title="New session" id="btnNewSession">＋Session</button>
+        <button id="btnNewGroup" data-i18n-title="group.newTitle" data-i18n="group.newBtn" title="New group">＋Group</button>
+        <button id="btnNewSession" data-i18n-title="session.newTitle" data-i18n="session.newBtn" title="New session">＋Session</button>
       </div>
     </div>
     <div id="sessionTree" class="session-tree"></div>
 
     <div class="sidebar-header">
-      <span>Tunnels</span>
+      <span data-i18n="tunnels.title">Tunnels</span>
       <div class="sidebar-actions">
-        <button title="New tunnel" id="btnNewTunnel">＋Tunnel</button>
+        <button id="btnNewTunnel" data-i18n-title="tunnel.newTitle" data-i18n="tunnel.newBtn" title="New tunnel">＋Tunnel</button>
       </div>
     </div>
     <div id="tunnelList" class="tunnel-list"></div>
 
     <div class="sidebar-footer">
-      <button id="btnLogout">Sign out</button>
-      <button id="btnChangePassword" title="Change admin password">🔑</button>
+      <button id="btnLogout" data-i18n="footer.signOut">Sign out</button>
+      <button id="btnChangePassword" data-i18n-title="footer.changePassword" title="Change admin password">🔑</button>
       <button id="btnThemeToggle" title="Switch theme">🌙</button>
+      <select id="langSelectApp" class="lang-select" aria-label="Language"></select>
     </div>
     <p id="buildVersionTagApp" class="build-version-tag"></p>
   </div>
@@ -74,10 +76,10 @@
     <div class="tab-bar-row">
       <div id="tabBar" class="tab-bar"></div>
       <div class="tab-bar-controls" id="layoutToolbar">
-        <button id="btnLayoutSingle" class="layout-btn active" title="Single pane" data-layout="single">□</button>
-        <button id="btnLayoutH" class="layout-btn" title="Left / Right split" data-layout="horizontal">▥</button>
-        <button id="btnLayoutV" class="layout-btn" title="Top / Bottom split" data-layout="vertical">▤</button>
-        <button id="btnLayoutGrid" class="layout-btn" title="4-pane grid" data-layout="grid">▦</button>
+        <button id="btnLayoutSingle" class="layout-btn active" data-i18n-title="layout.single" title="Single pane" data-layout="single">□</button>
+        <button id="btnLayoutH" class="layout-btn" data-i18n-title="layout.horizontal" title="Left / Right split" data-layout="horizontal">▥</button>
+        <button id="btnLayoutV" class="layout-btn" data-i18n-title="layout.vertical" title="Top / Bottom split" data-layout="vertical">▤</button>
+        <button id="btnLayoutGrid" class="layout-btn" data-i18n-title="layout.grid" title="4-pane grid" data-layout="grid">▦</button>
       </div>
       <div class="tab-bar-controls">
         <button id="btnFullscreen" class="layout-btn" title="Full screen">⛶</button>
@@ -85,7 +87,7 @@
     </div>
     <div id="terminals" class="terminals"></div>
     <div id="emptyState" class="empty-state">
-      <p>Select a session on the left, or click <b>＋Session</b> to add one.</p>
+      <p data-i18n-html="empty.state">Select a session on the left, or click <b>＋Session</b> to add one.</p>
     </div>
   </div>
 </div>
@@ -95,29 +97,29 @@
   <form id="sessionForm" method="dialog">
     <h2 id="sessionDialogTitle">New Session</h2>
     <input type="hidden" id="sessId" />
-    <label>Name <input id="sessName" required /></label>
-    <label>Group
-      <select id="sessGroup"><option value="">(none)</option></select>
+    <label><span data-i18n="field.name">Name</span> <input id="sessName" required /></label>
+    <label><span data-i18n="field.group">Group</span>
+      <select id="sessGroup"><option value="" data-i18n="common.none">(none)</option></select>
     </label>
-    <label>Host <input id="sessHost" required /></label>
-    <label>Port <input id="sessPort" type="number" value="22" required /></label>
-    <label>Username <input id="sessUser" required /></label>
-    <label>Auth type
+    <label><span data-i18n="field.host">Host</span> <input id="sessHost" required /></label>
+    <label><span data-i18n="field.port">Port</span> <input id="sessPort" type="number" value="22" required /></label>
+    <label><span data-i18n="field.username">Username</span> <input id="sessUser" required /></label>
+    <label><span data-i18n="field.authType">Auth type</span>
       <select id="sessAuthType">
-        <option value="password">Password</option>
-        <option value="privateKey">Private Key</option>
+        <option value="password" data-i18n="field.password">Password</option>
+        <option value="privateKey" data-i18n="field.privateKeyOption">Private Key</option>
       </select>
     </label>
-    <label id="sessPasswordRow">Password <input id="sessPassword" type="password" placeholder="(leave blank to keep existing)" /></label>
-    <label id="sessKeyRow" class="hidden">Private Key (PEM) <textarea id="sessPrivateKey" rows="4" placeholder="(leave blank to keep existing)"></textarea></label>
-    <label id="sessPassphraseRow" class="hidden">Key passphrase <input id="sessPassphrase" type="password" /></label>
-    <label>Keepalive interval (seconds)
+    <label id="sessPasswordRow"><span data-i18n="field.password">Password</span> <input id="sessPassword" type="password" data-i18n-placeholder="field.keepExisting" placeholder="(leave blank to keep existing)" /></label>
+    <label id="sessKeyRow" class="hidden"><span data-i18n="field.privateKey">Private Key (PEM)</span> <textarea id="sessPrivateKey" rows="4" data-i18n-placeholder="field.keepExisting" placeholder="(leave blank to keep existing)"></textarea></label>
+    <label id="sessPassphraseRow" class="hidden"><span data-i18n="field.passphrase">Key passphrase</span> <input id="sessPassphrase" type="password" /></label>
+    <label><span data-i18n="field.keepAlive">Keepalive interval (seconds)</span>
       <input id="sessKeepAlive" type="number" min="0" max="3600" step="1" value="30" placeholder="30" />
-      <small class="field-hint">Sends an SSH keepalive probe this often so idle connections aren't dropped by NAT/firewalls, and dead links are detected. 0 = off.</small>
+      <small class="field-hint" data-i18n="field.keepAliveHint">Sends an SSH keepalive probe this often so idle connections aren't dropped by NAT/firewalls, and dead links are detected. 0 = off.</small>
     </label>
     <div class="dialog-actions">
-      <button type="button" id="sessCancel">Cancel</button>
-      <button type="submit" id="sessSave">Save</button>
+      <button type="button" id="sessCancel" data-i18n="common.cancel">Cancel</button>
+      <button type="submit" id="sessSave" data-i18n="common.save">Save</button>
     </div>
   </form>
 </dialog>
@@ -127,10 +129,10 @@
   <form id="groupForm" method="dialog">
     <h2 id="groupDialogTitle">New Group</h2>
     <input type="hidden" id="groupId" />
-    <label>Name <input id="groupName" required /></label>
+    <label><span data-i18n="field.name">Name</span> <input id="groupName" required /></label>
     <div class="dialog-actions">
-      <button type="button" id="groupCancel">Cancel</button>
-      <button type="submit">Save</button>
+      <button type="button" id="groupCancel" data-i18n="common.cancel">Cancel</button>
+      <button type="submit" data-i18n="common.save">Save</button>
     </div>
   </form>
 </dialog>
@@ -138,26 +140,26 @@
 <!-- Tunnel edit dialog -->
 <dialog id="tunnelDialog" class="dialog">
   <form id="tunnelForm" method="dialog">
-    <h2>New Tunnel</h2>
+    <h2 id="tunnelDialogTitle">New Tunnel</h2>
     <input type="hidden" id="tunnelId" />
-    <label>Name <input id="tunnelName" required /></label>
-    <label>Via session
+    <label><span data-i18n="field.name">Name</span> <input id="tunnelName" required /></label>
+    <label><span data-i18n="tunnel.viaSession">Via session</span>
       <select id="tunnelSession" required></select>
     </label>
-    <label>Type
+    <label><span data-i18n="tunnel.type">Type</span>
       <select id="tunnelType">
-        <option value="local">Local (-L)</option>
-        <option value="remote">Remote (-R)</option>
-        <option value="dynamic">Dynamic / SOCKS5 (-D)</option>
+        <option value="local" data-i18n="tunnel.type.local">Local (-L)</option>
+        <option value="remote" data-i18n="tunnel.type.remote">Remote (-R)</option>
+        <option value="dynamic" data-i18n="tunnel.type.dynamic">Dynamic / SOCKS5 (-D)</option>
       </select>
     </label>
-    <label>Listen host <input id="tunnelListenHost" value="127.0.0.1" required /></label>
-    <label>Listen port <input id="tunnelListenPort" type="number" required /></label>
-    <label id="tunnelTargetHostRow">Target host <input id="tunnelTargetHost" /></label>
-    <label id="tunnelTargetPortRow">Target port <input id="tunnelTargetPort" type="number" /></label>
+    <label><span data-i18n="tunnel.listenHost">Listen host</span> <input id="tunnelListenHost" value="127.0.0.1" required /></label>
+    <label><span data-i18n="tunnel.listenPort">Listen port</span> <input id="tunnelListenPort" type="number" required /></label>
+    <label id="tunnelTargetHostRow"><span data-i18n="tunnel.targetHost">Target host</span> <input id="tunnelTargetHost" /></label>
+    <label id="tunnelTargetPortRow"><span data-i18n="tunnel.targetPort">Target port</span> <input id="tunnelTargetPort" type="number" /></label>
     <div class="dialog-actions">
-      <button type="button" id="tunnelCancel">Cancel</button>
-      <button type="submit">Save</button>
+      <button type="button" id="tunnelCancel" data-i18n="common.cancel">Cancel</button>
+      <button type="submit" data-i18n="common.save">Save</button>
     </div>
   </form>
 </dialog>
@@ -166,21 +168,22 @@
 <!-- Change admin password dialog -->
 <dialog id="passwordDialog" class="dialog">
   <form id="passwordForm" method="dialog">
-    <h2>Change Admin Password</h2>
-    <label>Current password <input id="pwCurrent" type="password" autocomplete="current-password" required /></label>
-    <label>New username <input id="pwNewUsername" type="text" autocomplete="username" placeholder="(leave blank to keep current)" /></label>
-    <label>New password <input id="pwNewPassword" type="password" autocomplete="new-password" required minlength="6" /></label>
-    <label>Confirm new password <input id="pwConfirmPassword" type="password" autocomplete="new-password" required minlength="6" /></label>
+    <h2 data-i18n="pw.title">Change Admin Password</h2>
+    <label><span data-i18n="pw.current">Current password</span> <input id="pwCurrent" type="password" autocomplete="current-password" required /></label>
+    <label><span data-i18n="pw.newUsername">New username</span> <input id="pwNewUsername" type="text" autocomplete="username" data-i18n-placeholder="pw.keepCurrent" placeholder="(leave blank to keep current)" /></label>
+    <label><span data-i18n="pw.new">New password</span> <input id="pwNewPassword" type="password" autocomplete="new-password" required minlength="6" /></label>
+    <label><span data-i18n="pw.confirm">Confirm new password</span> <input id="pwConfirmPassword" type="password" autocomplete="new-password" required minlength="6" /></label>
     <p id="pwError" class="error"></p>
     <div class="dialog-actions">
-      <button type="button" id="pwCancel">Cancel</button>
-      <button type="submit" id="pwSave">Save</button>
+      <button type="button" id="pwCancel" data-i18n="common.cancel">Cancel</button>
+      <button type="submit" id="pwSave" data-i18n="common.save">Save</button>
     </div>
   </form>
 </dialog>
 
 <script src="vendor/xterm/lib/xterm.js"></script>
 <script src="vendor/xterm-addon-fit/lib/xterm-addon-fit.js"></script>
+<script src="js/i18n.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

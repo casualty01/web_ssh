@@ -113,7 +113,7 @@ html, body {
   scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 }
 /* ---- login ---- */
-.login-screen { height: 100%; display: flex; align-items: center; justify-content: center; background: var(--bg); flex-direction: column;}
+.login-screen { position: relative; height: 100%; display: flex; align-items: center; justify-content: center; background: var(--bg); flex-direction: column;}
 .login-box {
   background: var(--panel-bg);
   padding: 2.25rem;
@@ -476,3 +476,17 @@ html, body {
 }
 .login-screen .build-version-tag { text-align: center; }
 .sidebar .build-version-tag { padding: 0 0.75rem 0.625rem; text-align: left; }
+
+/* ---- language picker ---- */
+.lang-select {
+  padding: 0.4rem 0.5rem;
+  background: var(--btn-bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  font-size: var(--font-xs); cursor: pointer;
+  transition: background var(--transition-fast);
+}
+.lang-select:hover { background: var(--btn-bg-hover); }
+.lang-select:focus { outline: none; border-color: var(--accent); }
+.login-lang { position: absolute; top: 1rem; right: 1rem; }
+.sidebar-footer { flex-wrap: wrap; }
+.sidebar-footer .lang-select { flex: 0 1 auto; min-width: 0; max-width: 6.5rem; }

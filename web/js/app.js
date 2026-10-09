@@ -1,6 +1,9 @@
 (() => {
   'use strict';
 
+  // i18n helpers (js/i18n.js is loaded before this file).
+  const t = (key, params) => I18n.t(key, params);
+
   // ---------------- API helper ----------------
   async function api(path, opts = {}) {
     const res = await fetch(path, {
@@ -15,7 +18,7 @@
     if (!res.ok) {
       let msg = res.statusText;
       try { msg = (await res.json()).error || msg; } catch (_) {}
-      throw new Error(msg);
+      throw new Error(I18n.err(msg)); // backend errors are English; translate known ones
     }
     if (res.status === 204) return null;
     const text = await res.text();
@@ -28,6 +31,14 @@
   // at (and the server behind it) is actually the build you just deployed
   // — handy when a fix "isn't showing up" and you're not sure if it's a
   // stale browser cache, a stale deploy, or a real bug.
+  let buildVersion = 'unknown';
+  function renderBuildVersion() {
+    const text = t('build.version', { version: buildVersion });
+    const loginTag = document.getElementById('buildVersionTag');
+    const appTag = document.getElementById('buildVersionTagApp');
+    if (loginTag) loginTag.textContent = text;
+    if (appTag) appTag.textContent = text;
+  }
   (async function showBuildVersion() {
     let version = 'unknown';
     try {
@@ -35,11 +46,8 @@
       if (r.ok) version = (await r.json()).version || 'unknown';
     } catch (_) { /* offline / server not reachable yet — leave as unknown */ }
     console.log('[webssh] build version:', version);
-    const text = `build ${version}`;
-    const loginTag = document.getElementById('buildVersionTag');
-    const appTag = document.getElementById('buildVersionTagApp');
-    if (loginTag) loginTag.textContent = text;
-    if (appTag) appTag.textContent = text;
+    buildVersion = version;
+    renderBuildVersion();
   })();
 
   // ---------------- state ----------------
@@ -147,7 +155,7 @@
       await refreshAll();
       restoreWorkspace();
     } catch (err) {
-      errEl.textContent = 'Invalid username or password';
+      errEl.textContent = t('login.error');
     }
   });
 
@@ -161,7 +169,7 @@
     appEl.classList.toggle('sidebar-collapsed', collapsed);
     sidebarEl.classList.toggle('collapsed', collapsed);
     sidebarToggleBtn.textContent = collapsed ? '›' : '‹';
-    sidebarToggleBtn.title = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+    sidebarToggleBtn.title = t(collapsed ? 'sidebar.expand' : 'sidebar.collapse');
   }
 
   (function initSidebarCollapsed() {
@@ -201,11 +209,11 @@
     const confirmPassword = document.getElementById('pwConfirmPassword').value;
 
     if (newPassword.length < 6) {
-      pwError.textContent = 'New password must be at least 6 characters.';
+      pwError.textContent = t('pw.tooShort');
       return;
     }
     if (newPassword !== confirmPassword) {
-      pwError.textContent = 'New password and confirmation do not match.';
+      pwError.textContent = t('pw.mismatch');
       return;
     }
 
@@ -215,7 +223,7 @@
         body: JSON.stringify({ currentPassword, newUsername, newPassword }),
       });
     } catch (err) {
-      pwError.textContent = err.message || 'Failed to change password';
+      pwError.textContent = err.message || t('pw.failed');
       return;
     }
 
@@ -223,7 +231,7 @@
     // new credentials take effect immediately. Send everyone back to the
     // login screen.
     passwordDialog.close();
-    alert('Password changed. Please sign in again with your new credentials.');
+    alert(t('pw.changed'));
     location.reload();
   });
 
@@ -271,7 +279,7 @@
   function applyTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
     btnThemeToggle.textContent = theme === 'light' ? '☀' : '🌙';
-    btnThemeToggle.title = theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme';
+    btnThemeToggle.title = t(theme === 'light' ? 'theme.toDark' : 'theme.toLight');
     try { localStorage.setItem('webssh-theme', theme); } catch (_) {}
   }
 
@@ -380,14 +388,14 @@
       title.innerHTML = `<span class="group-name" title="${escapeHtml(g.name)}">📁 ${escapeHtml(g.name)}</span>`;
       const actions = document.createElement('span');
       actions.className = 'group-actions';
-      actions.innerHTML = `<button data-act="rename">✎</button><button data-act="del">🗑</button>`;
+      actions.innerHTML = `<button data-act="rename" title="${escapeHtml(t('common.rename'))}">✎</button><button data-act="del" title="${escapeHtml(t('common.delete'))}">🗑</button>`;
       title.appendChild(actions);
       wrap.appendChild(title);
 
       actions.querySelector('[data-act="rename"]').onclick = (e) => { e.stopPropagation(); openGroupDialog(g); };
       actions.querySelector('[data-act="del"]').onclick = async (e) => {
         e.stopPropagation();
-        if (confirm(`Delete group "${g.name}"? Sessions inside will become ungrouped.`)) {
+        if (confirm(t('group.confirmDelete', { name: g.name }))) {
           await api(`/api/groups/${g.id}`, { method: 'DELETE' });
           expandedGroups.delete(g.id);
           saveExpandedGroups(expandedGroups);
@@ -413,7 +421,7 @@
     if (query && filteredSessions.length === 0 && !anyGroupVisible) {
       const empty = document.createElement('div');
       empty.className = 'search-empty';
-      empty.textContent = 'No sessions match your search.';
+      empty.textContent = t('search.noSessions');
       treeEl.appendChild(empty);
     }
   }
@@ -429,7 +437,7 @@
     </span>`;
     const actions = document.createElement('span');
     actions.className = 'item-actions';
-    actions.innerHTML = `<button data-act="edit">✎</button><button data-act="files">📁</button><button data-act="del">🗑</button>`;
+    actions.innerHTML = `<button data-act="edit" title="${escapeHtml(t('common.edit'))}">✎</button><button data-act="files" title="${escapeHtml(t('item.files'))}">📁</button><button data-act="del" title="${escapeHtml(t('common.delete'))}">🗑</button>`;
     row.appendChild(actions);
 
     row.addEventListener('click', (e) => {
@@ -447,7 +455,7 @@
     };
     actions.querySelector('[data-act="del"]').onclick = async (e) => {
       e.stopPropagation();
-      if (confirm(`Delete session "${s.name}"?`)) {
+      if (confirm(t('session.confirmDelete', { name: s.name }))) {
         await api(`/api/sessions/${s.id}`, { method: 'DELETE' });
         closeTabForSession(s.id);
         await refreshAll();
@@ -475,10 +483,15 @@
 
   function populateGroupSelect() {
     const sel = document.getElementById('sessGroup');
-    sel.innerHTML = '<option value="">(none)</option>';
+    const prev = sel.value;
+    sel.innerHTML = '';
+    const none = document.createElement('option');
+    none.value = ''; none.textContent = t('common.none');
+    sel.appendChild(none);
     for (const g of state.groups) {
       const o = document.createElement('option'); o.value = g.id; o.textContent = g.name; sel.appendChild(o);
     }
+    sel.value = prev;
   }
 
   // Empty/invalid -> default 30s; 0 (or negative) -> keepalive off.
@@ -489,7 +502,7 @@
   }
 
   function openSessionDialog(sess) {
-    document.getElementById('sessionDialogTitle').textContent = sess ? 'Edit Session' : 'New Session';
+    document.getElementById('sessionDialogTitle').textContent = t(sess ? 'session.dialog.edit' : 'session.dialog.new');
     document.getElementById('sessId').value = sess ? sess.id : '';
     document.getElementById('sessName').value = sess ? sess.name : '';
     document.getElementById('sessGroup').value = sess ? (sess.groupId || '') : '';
@@ -532,7 +545,7 @@
   document.getElementById('groupCancel').onclick = () => groupDialog.close();
 
   function openGroupDialog(g) {
-    document.getElementById('groupDialogTitle').textContent = g ? 'Rename Group' : 'New Group';
+    document.getElementById('groupDialogTitle').textContent = t(g ? 'group.dialog.rename' : 'group.dialog.new');
     document.getElementById('groupId').value = g ? g.id : '';
     document.getElementById('groupName').value = g ? g.name : '';
     groupDialog.showModal();
@@ -569,15 +582,16 @@
     }
   }
 
-  function openTunnelDialog(t) {
-    document.getElementById('tunnelId').value = t ? t.id : '';
-    document.getElementById('tunnelName').value = t ? t.name : '';
-    document.getElementById('tunnelSession').value = t ? t.sessionId : (state.sessions[0] && state.sessions[0].id) || '';
-    document.getElementById('tunnelType').value = t ? t.type : 'local';
-    document.getElementById('tunnelListenHost').value = t ? t.listenHost : '127.0.0.1';
-    document.getElementById('tunnelListenPort').value = t ? t.listenPort : '';
-    document.getElementById('tunnelTargetHost').value = t ? t.targetHost : '';
-    document.getElementById('tunnelTargetPort').value = t ? t.targetPort : '';
+  function openTunnelDialog(tun) {
+    document.getElementById('tunnelDialogTitle').textContent = t(tun ? 'tunnel.dialog.edit' : 'tunnel.dialog.new');
+    document.getElementById('tunnelId').value = tun ? tun.id : '';
+    document.getElementById('tunnelName').value = tun ? tun.name : '';
+    document.getElementById('tunnelSession').value = tun ? tun.sessionId : (state.sessions[0] && state.sessions[0].id) || '';
+    document.getElementById('tunnelType').value = tun ? tun.type : 'local';
+    document.getElementById('tunnelListenHost').value = tun ? tun.listenHost : '127.0.0.1';
+    document.getElementById('tunnelListenPort').value = tun ? tun.listenPort : '';
+    document.getElementById('tunnelTargetHost').value = tun ? tun.targetHost : '';
+    document.getElementById('tunnelTargetPort').value = tun ? tun.targetPort : '';
     updateTunnelRows();
     tunnelDialog.showModal();
   }
@@ -604,45 +618,49 @@
     tunnelListEl.innerHTML = '';
     const query = state.searchQuery;
     const filtered = state.tunnels
-      .filter((t) => matchesQuery([t.name, t.listenHost, t.targetHost], query))
+      .filter((tn) => matchesQuery([tn.name, tn.listenHost, tn.targetHost], query))
       .slice()
       .sort((a, b) => naturalSort(a.name, b.name));
 
     if (query && filtered.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'search-empty';
-      empty.textContent = 'No tunnels match your search.';
+      empty.textContent = t('search.noTunnels');
       tunnelListEl.appendChild(empty);
       return;
     }
 
-    for (const t of filtered) {
+    for (const tn of filtered) {
       const row = document.createElement('div');
       row.className = 'tunnel-item';
-      const badge = t.running ? '<span class="badge running">running</span>' : '<span class="badge">stopped</span>';
-      const detail = t.type === 'dynamic'
-        ? `SOCKS5 ${t.listenHost}:${t.listenPort}`
-        : `${t.listenHost}:${t.listenPort} → ${t.targetHost}:${t.targetPort}`;
+      const badge = tn.running
+        ? `<span class="badge running">${escapeHtml(t('tunnel.running'))}</span>`
+        : `<span class="badge">${escapeHtml(t('tunnel.stopped'))}</span>`;
+      const detail = tn.type === 'dynamic'
+        ? `SOCKS5 ${tn.listenHost}:${tn.listenPort}`
+        : `${tn.listenHost}:${tn.listenPort} → ${tn.targetHost}:${tn.targetPort}`;
       row.innerHTML = `${badge}<span class="name item-main">
-        <span class="item-title" title="${escapeHtml(t.name)}">${escapeHtml(t.name)}</span>
+        <span class="item-title" title="${escapeHtml(tn.name)}">${escapeHtml(tn.name)}</span>
         <span class="session-sub" title="${escapeHtml(detail)}">${escapeHtml(detail)}</span>
       </span>`;
       const actions = document.createElement('span');
       actions.className = 'item-actions';
-      actions.innerHTML = t.running
-        ? `<button data-act="stop">⏹</button><button data-act="del">🗑</button>`
-        : `<button data-act="start">▶</button><button data-act="edit">✎</button><button data-act="del">🗑</button>`;
+      const bStop = `<button data-act="stop" title="${escapeHtml(t('common.stop'))}">⏹</button>`;
+      const bStart = `<button data-act="start" title="${escapeHtml(t('common.start'))}">▶</button>`;
+      const bEdit = `<button data-act="edit" title="${escapeHtml(t('common.edit'))}">✎</button>`;
+      const bDel = `<button data-act="del" title="${escapeHtml(t('common.delete'))}">🗑</button>`;
+      actions.innerHTML = tn.running ? bStop + bDel : bStart + bEdit + bDel;
       row.appendChild(actions);
 
       const startBtn = actions.querySelector('[data-act="start"]');
-      if (startBtn) startBtn.onclick = async () => { await api(`/api/tunnels/${t.id}/start`, { method: 'POST' }); await refreshAll(); };
+      if (startBtn) startBtn.onclick = async () => { await api(`/api/tunnels/${tn.id}/start`, { method: 'POST' }); await refreshAll(); };
       const stopBtn = actions.querySelector('[data-act="stop"]');
-      if (stopBtn) stopBtn.onclick = async () => { await api(`/api/tunnels/${t.id}/stop`, { method: 'POST' }); await refreshAll(); };
+      if (stopBtn) stopBtn.onclick = async () => { await api(`/api/tunnels/${tn.id}/stop`, { method: 'POST' }); await refreshAll(); };
       const editBtn = actions.querySelector('[data-act="edit"]');
-      if (editBtn) editBtn.onclick = () => openTunnelDialog(t);
+      if (editBtn) editBtn.onclick = () => openTunnelDialog(tn);
       const delBtn = actions.querySelector('[data-act="del"]');
       if (delBtn) delBtn.onclick = async () => {
-        if (confirm(`Delete tunnel "${t.name}"?`)) { await api(`/api/tunnels/${t.id}`, { method: 'DELETE' }); await refreshAll(); }
+        if (confirm(t('tunnel.confirmDelete', { name: tn.name }))) { await api(`/api/tunnels/${tn.id}`, { method: 'DELETE' }); await refreshAll(); }
       };
 
       tunnelListEl.appendChild(row);
@@ -724,12 +742,12 @@
       try {
         const msg = JSON.parse(evt.data);
         if (msg.type === 'data') tab.term.write(msg.data);
-        else if (msg.type === 'error') tab.term.write(`\r\n\x1b[31m[error] ${msg.message}\x1b[0m\r\n`);
-        else if (msg.type === 'closed') tab.term.write('\r\n\x1b[33m[connection closed]\x1b[0m\r\n');
+        else if (msg.type === 'error') tab.term.write(`\r\n\x1b[31m${t('term.error', { message: msg.message })}\x1b[0m\r\n`);
+        else if (msg.type === 'closed') tab.term.write(`\r\n\x1b[33m${t('term.closed')}\x1b[0m\r\n`);
       } catch (_) {}
     };
     ws.onclose = () => {
-      tab.term.write('\r\n\x1b[33m[disconnected]\x1b[0m\r\n');
+      tab.term.write(`\r\n\x1b[33m${t('term.disconnected')}\x1b[0m\r\n`);
       // A closed/failed socket can mean the network hiccuped, or it can mean
       // the auth cookie expired (the ws upgrade is behind the same auth
       // middleware as the REST API, so an expired session gets the upgrade
@@ -861,7 +879,7 @@
   function syncFullscreenButton() {
     const active = appEl.classList.contains('fullscreen-mode');
     btnFullscreen.classList.toggle('active', active);
-    btnFullscreen.title = active ? 'Exit full screen' : 'Full screen';
+    btnFullscreen.title = t(active ? 'fullscreen.exit' : 'fullscreen.enter');
   }
 
   btnFullscreen.addEventListener('click', toggleFullscreen);
@@ -1011,7 +1029,7 @@
   function renderSplitSelects() {
     splitPanesEls.forEach((slot, i) => {
       const assignedElsewhere = new Set(state.paneTabs.filter((id, idx) => id && idx !== i));
-      const options = ['<option value="">(empty)</option>'].concat(
+      const options = [`<option value="">${escapeHtml(t('common.empty'))}</option>`].concat(
         state.openTabs
           .filter((t) => !assignedElsewhere.has(t.id))
           .map((t) => {
@@ -1048,7 +1066,7 @@
       } else {
         const empty = document.createElement('div');
         empty.className = 'split-empty';
-        empty.textContent = 'Choose a session above';
+        empty.textContent = t('split.choose');
         slot.body.appendChild(empty);
       }
     });
@@ -1146,24 +1164,25 @@
     pane.id = tabId;
     pane.innerHTML = `
       <div class="sftp-toolbar">
-        <button class="sftp-up" title="Up one level">⬆</button>
+        <button class="sftp-up" data-i18n-title="sftp.up">⬆</button>
         <span class="sftp-path"></span>
         <span class="sftp-spacer"></span>
-        <button class="sftp-refresh" title="Refresh">⟳</button>
-        <button class="sftp-mkdir" title="New folder">＋Folder</button>
-        <label class="sftp-upload-btn">⬆ Upload<input type="file" class="sftp-upload-input" multiple hidden /></label>
+        <button class="sftp-refresh" data-i18n-title="sftp.refresh">⟳</button>
+        <button class="sftp-mkdir" data-i18n-title="sftp.newFolder" data-i18n="sftp.newFolderBtn">＋Folder</button>
+        <label class="sftp-upload-btn"><span data-i18n="sftp.upload">⬆ Upload</span><input type="file" class="sftp-upload-input" multiple hidden /></label>
       </div>
       <div class="sftp-status"></div>
       <div class="sftp-transfer hidden">
         <div class="xfer-head">
           <span class="xfer-title"></span>
-          <button type="button" class="xfer-cancel" title="Cancel upload">✕ Cancel</button>
+          <button type="button" class="xfer-cancel" data-i18n-title="sftp.cancelUploadTitle" data-i18n="sftp.cancelUploadBtn">✕ Cancel</button>
         </div>
         <div class="xfer-bar"><div class="xfer-bar-fill"></div></div>
         <div class="xfer-detail"></div>
       </div>
       <div class="sftp-list"></div>
     `;
+    I18n.apply(pane);
     terminalsEl.appendChild(pane);
 
     const tab = { id: tabId, sessionId: sess.id, name: sess.name, kind: 'sftp', pane, cwd: '.' };
@@ -1189,7 +1208,7 @@
     }
 
     async function load(dir) {
-      setStatus('Loading…');
+      setStatus(t('sftp.loading'));
       try {
         const res = await api(`/api/sftp/${sess.id}/list?path=${encodeURIComponent(dir)}`);
         tab.cwd = res.path || dir;
@@ -1216,9 +1235,9 @@
             <span class="sftp-name">${icon} ${escapeHtml(entry.name)}</span>
             <span class="sftp-size">${sizeStr}</span>
             <span class="sftp-actions">
-              ${entry.isDir ? '' : '<button data-act="dl" title="Download">⬇</button>'}
-              <button data-act="rn" title="Rename">✎</button>
-              <button data-act="rm" title="Delete">🗑</button>
+              ${entry.isDir ? '' : `<button data-act="dl" title="${escapeHtml(t('sftp.download'))}">⬇</button>`}
+              <button data-act="rn" title="${escapeHtml(t('common.rename'))}">✎</button>
+              <button data-act="rm" title="${escapeHtml(t('common.delete'))}">🗑</button>
             </span>`;
           row.querySelector('.sftp-name').onclick = () => {
             if (entry.isDir) load(entry.path);
@@ -1230,7 +1249,7 @@
           };
           row.querySelector('[data-act="rn"]').onclick = async (e) => {
             e.stopPropagation();
-            const name = prompt('New name:', entry.name);
+            const name = prompt(t('sftp.newName'), entry.name);
             if (!name || name === entry.name) return;
             const newPath = tab.cwd.replace(/\/$/, '') + '/' + name;
             try {
@@ -1240,7 +1259,7 @@
           };
           row.querySelector('[data-act="rm"]').onclick = async (e) => {
             e.stopPropagation();
-            if (!confirm(`Delete "${entry.name}"?${entry.isDir ? ' (and everything inside it)' : ''}`)) return;
+            if (!confirm(t(entry.isDir ? 'sftp.confirmDeleteDir' : 'sftp.confirmDelete', { name: entry.name }))) return;
             try {
               await api(`/api/sftp/${sess.id}/remove?path=${encodeURIComponent(entry.path)}`, { method: 'DELETE' });
               load(tab.cwd);
@@ -1256,7 +1275,7 @@
     };
     pane.querySelector('.sftp-refresh').onclick = () => load(tab.cwd);
     pane.querySelector('.sftp-mkdir').onclick = async () => {
-      const name = prompt('New folder name:');
+      const name = prompt(t('sftp.newFolderName'));
       if (!name) return;
       try {
         await api(`/api/sftp/${sess.id}/mkdir`, { method: 'POST', body: JSON.stringify({ path: tab.cwd.replace(/\/$/, '') + '/' + name }) });
@@ -1292,7 +1311,7 @@
           try { msg = JSON.parse(xhr.responseText).error || msg; } catch (_) {}
           reject(new Error(msg));
         };
-        xhr.onerror = () => reject(new Error('connection lost during upload (the server may have rejected the request — check the target folder permissions)'));
+        xhr.onerror = () => reject(new Error(t('sftp.connectionLost')));
         xhr.onabort = () => { const err = new Error('cancelled'); err.cancelled = true; reject(err); };
         const form = new FormData();
         form.append('file', file, file.name);
@@ -1334,13 +1353,13 @@
       function render() {
         const pct = totalBytes > 0 ? Math.min(100, (curBytes / totalBytes) * 100) : 0;
         xferFill.style.width = `${pct}%`;
-        xferTitle.textContent = `Uploading ${index}/${files.length}: ${curName}`;
+        xferTitle.textContent = t('sftp.uploading', { index, total: files.length, name: curName });
         const parts = [`${pct.toFixed(1)}%`, `${formatBytes(curBytes)} / ${formatBytes(totalBytes)}`];
         if (sentAll && index === files.length && curBytes >= totalBytes) {
-          parts.push('finalizing on remote…');
+          parts.push(t('sftp.finalizing'));
         } else {
           parts.push(fmtSpeed(speed));
-          parts.push(`ETA ${speed > 0 ? fmtDuration((totalBytes - curBytes) / speed) : '--:--'}`);
+          parts.push(t('sftp.eta', { time: speed > 0 ? fmtDuration((totalBytes - curBytes) / speed) : '--:--' }));
         }
         xferDetail.textContent = parts.join(' · ');
       }
@@ -1378,19 +1397,19 @@
         xferFill.style.width = '100%';
         xferEl.classList.add('done');
         xferCancel.classList.add('hidden');
-        xferTitle.textContent = `Upload complete: ${completed} file(s)`;
-        xferDetail.textContent = `${formatBytes(totalBytes)} in ${fmtDuration(secs)} · avg ${fmtSpeed(secs > 0 ? totalBytes / secs : 0)}`;
+        xferTitle.textContent = t('sftp.uploadComplete', { count: completed });
+        xferDetail.textContent = t('sftp.uploadSummary', { size: formatBytes(totalBytes), time: fmtDuration(secs), speed: fmtSpeed(secs > 0 ? totalBytes / secs : 0) });
         hideTimer = setTimeout(() => xferEl.classList.add('hidden'), 8000);
       } catch (err) {
         clearInterval(ticker);
         xferCancel.classList.add('hidden');
         if (err.cancelled) {
-          xferTitle.textContent = 'Upload cancelled';
-          xferDetail.textContent = `${completed} of ${files.length} file(s) uploaded before cancelling; "${curName}" was not kept.`;
+          xferTitle.textContent = t('sftp.uploadCancelled');
+          xferDetail.textContent = t('sftp.uploadCancelledDetail', { done: completed, total: files.length, name: curName });
         } else {
           xferEl.classList.add('error');
-          xferTitle.textContent = `Upload failed: ${curName}`;
-          xferDetail.textContent = `${err.message}${completed ? ` (${completed} earlier file(s) uploaded)` : ''}`;
+          xferTitle.textContent = t('sftp.uploadFailed', { name: curName });
+          xferDetail.textContent = `${err.message}${completed ? t('sftp.earlierUploaded', { count: completed }) : ''}`;
         }
       } finally {
         currentXhr = null;
@@ -1424,6 +1443,27 @@
     return `${n.toFixed(1)} ${units[i]}`;
   }
 
+  // ---------------- language switching ----------------
+  // Static markup is re-translated by I18n itself (data-i18n attributes,
+  // including already-open SFTP panes). This refreshes everything that is
+  // built from JS strings.
+  I18n.onChange(() => {
+    renderBuildVersion();
+    applySidebarCollapsed(state.sidebarCollapsed);
+    applyTheme(document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark');
+    syncFullscreenButton();
+    populateGroupSelect();
+    renderTree();
+    renderTunnels();
+    if (state.layout !== 'single') {
+      renderSplitSelects();
+      applyPaneAssignments();
+    }
+  });
+
   // ---------------- init ----------------
+  renderBuildVersion();
+  applySidebarCollapsed(state.sidebarCollapsed); // sets the localized toggle title
+  syncFullscreenButton();
   checkAuth();
 })();
