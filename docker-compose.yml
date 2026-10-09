@@ -1,0 +1,14 @@
+services:
+  webssh:
+    build: .
+    image: webssh:latest
+    container_name: webssh
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - ADMIN_USER=admin
+      - ADMIN_PASSWORD=change-me
+    volumes:
+      - ../webssh-data:/data
+

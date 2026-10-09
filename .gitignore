@@ -1,0 +1,72 @@
+# 例外：不忽略 .gitignore 文件
+!.gitignore
+!.cargo
+!.cargo/
+!.cargo/config.toml
+
+# Rust
+target/
+**/target/
+Cargo.lock
+**/Cargo.lock
+*.rs.bk
+
+# Node.js
+node_modules/
+**/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Build outputs
+dist/
+**/dist/
+dist-electron/
+**/dist-electron/
+build/
+**/build/
+out/
+**/out/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Electron
+*.exe
+*.dmg
+*.AppImage
+*.deb
+*.rpm
+*.h264
+
+# database temp
+data/
+
+# python
+__pycache__/
+*.pyc
+*.*.pyc
+# zip
+*.zip
