@@ -18,12 +18,11 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: 你的用户名/web_ssh
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/web_ssh
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=ref,event=branch
