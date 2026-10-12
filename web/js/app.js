@@ -667,6 +667,161 @@
     }
   }
 
+
+  // ---------------- terminal settings ----------------
+  const TERM_SETTINGS_KEY = 'webssh-term-settings';
+  const FONT_PRESETS = [
+    { id: 'default', label: 'Default (monospace)', stack: 'Menlo, Consolas, "DejaVu Sans Mono", "Courier New", monospace' },
+    { id: 'consolas', label: 'Consolas', stack: 'Consolas, "Courier New", monospace' },
+    { id: 'menlo', label: 'Menlo / Monaco', stack: 'Menlo, Monaco, "Courier New", monospace' },
+    { id: 'firacode', label: 'Fira Code', stack: '"Fira Code", "Cascadia Code", Menlo, Consolas, monospace' },
+    { id: 'jetbrains', label: 'JetBrains Mono', stack: '"JetBrains Mono", Menlo, Consolas, monospace' },
+    { id: 'courier', label: 'Courier New', stack: '"Courier New", Courier, monospace' },
+    { id: 'custom', label: 'Custom…', stack: '' },
+  ];
+  const TERM_DEFAULTS = {
+    fontSize: 14, fontPreset: 'default', fontCustom: '',
+    background: '#1e1e1e', foreground: '#ffffff',
+    cursorStyle: 'block', cursorBlink: true, scrollback: 5000,
+  };
+
+  function loadTermSettings() {
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(TERM_SETTINGS_KEY) || '{}') || {}; } catch (_) {}
+    return Object.assign({}, TERM_DEFAULTS, saved);
+  }
+  let termSettings = loadTermSettings();
+
+  function clampInt(v, min, max, fallback) {
+    const n = parseInt(v, 10);
+    if (isNaN(n)) return fallback;
+    return Math.min(max, Math.max(min, n));
+  }
+
+  function termFontStack(s) {
+    if (s.fontPreset === 'custom') return s.fontCustom.trim() || FONT_PRESETS[0].stack;
+    const f = FONT_PRESETS.find((x) => x.id === s.fontPreset) || FONT_PRESETS[0];
+    return f.stack;
+  }
+
+  function termOptions() {
+    const s = termSettings;
+    return {
+      cursorBlink: !!s.cursorBlink,
+      cursorStyle: ['block', 'bar', 'underline'].includes(s.cursorStyle) ? s.cursorStyle : 'block',
+      fontSize: clampInt(s.fontSize, 8, 32, 14),
+      fontFamily: termFontStack(s),
+      scrollback: clampInt(s.scrollback, 500, 100000, 5000),
+      theme: { background: s.background, foreground: s.foreground },
+    };
+  }
+
+  function applyTermSettings() {
+    const opts = termOptions();
+    document.documentElement.style.setProperty('--term-bg', opts.theme.background);
+    for (const tab of state.openTabs) {
+      if (!tab.term) continue;
+      try {
+        for (const k of Object.keys(opts)) tab.term.options[k] = opts[k];
+      } catch (_) {}
+    }
+    // Font changes alter the cell size, so re-fit and tell the server the new size.
+    requestAnimationFrame(() => {
+      for (const tab of state.openTabs) {
+        if (!tab.term || !tab.fitAddon || !tab.pane || !tab.pane.classList.contains('active')) continue;
+        try { tab.fitAddon.fit(); } catch (_) {}
+        if (tab.ws && tab.ws.readyState === WebSocket.OPEN) {
+          tab.ws.send(JSON.stringify({ type: 'resize', cols: tab.term.cols, rows: tab.term.rows }));
+        }
+      }
+    });
+  }
+
+  function saveTermSettings() {
+    try { localStorage.setItem(TERM_SETTINGS_KEY, JSON.stringify(termSettings)); } catch (_) {}
+  }
+
+  const settingsDialog = document.getElementById('settingsDialog');
+  const setFontSize = document.getElementById('setFontSize');
+  const setFontFamily = document.getElementById('setFontFamily');
+  const setFontCustom = document.getElementById('setFontCustom');
+  const setFontCustomRow = document.getElementById('setFontCustomRow');
+  const setBg = document.getElementById('setBg');
+  const setFg = document.getElementById('setFg');
+  const setCursorStyle = document.getElementById('setCursorStyle');
+  const setCursorBlink = document.getElementById('setCursorBlink');
+  const setScrollback = document.getElementById('setScrollback');
+
+  for (const f of FONT_PRESETS) {
+    const o = document.createElement('option');
+    o.value = f.id;
+    o.textContent = f.label;
+    setFontFamily.appendChild(o);
+  }
+
+  function fillSettingsForm() {
+    const s = termSettings;
+    setFontSize.value = s.fontSize;
+    setFontFamily.value = s.fontPreset;
+    setFontCustom.value = s.fontCustom;
+    setFontCustomRow.classList.toggle('hidden', s.fontPreset !== 'custom');
+    setBg.value = s.background;
+    setFg.value = s.foreground;
+    setCursorStyle.value = s.cursorStyle;
+    setCursorBlink.checked = !!s.cursorBlink;
+    setScrollback.value = s.scrollback;
+  }
+
+  function readSettingsForm() {
+    termSettings = {
+      fontSize: clampInt(setFontSize.value, 8, 32, TERM_DEFAULTS.fontSize),
+      fontPreset: setFontFamily.value,
+      fontCustom: setFontCustom.value,
+      background: setBg.value,
+      foreground: setFg.value,
+      cursorStyle: setCursorStyle.value,
+      cursorBlink: setCursorBlink.checked,
+      scrollback: clampInt(setScrollback.value, 500, 100000, TERM_DEFAULTS.scrollback),
+    };
+    setFontCustomRow.classList.toggle('hidden', termSettings.fontPreset !== 'custom');
+    saveTermSettings();
+    applyTermSettings();
+  }
+
+  document.getElementById('btnSettings').addEventListener('click', () => {
+    fillSettingsForm();
+    settingsDialog.showModal();
+  });
+  settingsDialog.addEventListener('input', readSettingsForm);
+  settingsDialog.addEventListener('change', readSettingsForm);
+  document.getElementById('setReset').addEventListener('click', () => {
+    termSettings = Object.assign({}, TERM_DEFAULTS);
+    saveTermSettings();
+    fillSettingsForm();
+    applyTermSettings();
+  });
+  applyTermSettings();
+
+  // ---------------- about ----------------
+  // Fill in the project links here. Empty entries are hidden in the dialog.
+  const ABOUT_LINKS = {
+    github: 'https://github.com/casualty-01/web_ssh',
+    website: 'https://www.114237041.xyz',
+    dockerhub: 'https://hub.docker.com/r/casualty01/web_ssh',
+  };
+  const aboutDialog = document.getElementById('aboutDialog');
+  document.getElementById('btnAbout').addEventListener('click', () => {
+    for (const key of Object.keys(ABOUT_LINKS)) {
+      const a = document.getElementById('about' + key.charAt(0).toUpperCase() + key.slice(1));
+      if (!a) continue;
+      const url = ABOUT_LINKS[key];
+      if (url) { a.href = url; a.textContent = url; }
+      a.parentElement.classList.toggle('hidden', !url);
+    }
+    document.getElementById('aboutVersion').textContent = t('build.version', { version: buildVersion });
+    aboutDialog.showModal();
+  });
+
   // ---------------- terminal tabs ----------------
   const tabBar = document.getElementById('tabBar');
   const terminalsEl = document.getElementById('terminals');
@@ -683,11 +838,7 @@
   function openTerminalTab(sess, termId) {
     const tabId = `tab-${sess.id}-${Date.now()}`;
     termId = termId || genTermId();
-    const term = new Terminal({
-      cursorBlink: true,
-      fontSize: 14,
-      theme: { background: '#1e1e1e' },
-    });
+    const term = new Terminal(termOptions());
     const fitAddon = new FitAddon.FitAddon();
     term.loadAddon(fitAddon);
 

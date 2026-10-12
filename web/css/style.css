@@ -202,10 +202,12 @@ html, body {
 }
 .sidebar-footer button:hover { background: var(--btn-bg-hover); }
 .sidebar-footer #btnThemeToggle,
-.sidebar-footer #btnChangePassword { flex: 0 0 auto; padding: 0.45rem 0.7rem; }
+.sidebar-footer #btnChangePassword,
+.sidebar-footer #btnSettings,
+.sidebar-footer #btnAbout { flex: 0 0 auto; padding: 0.45rem 0.7rem; }
 /* ---- search box ---- */
 .sidebar-search { padding: 0.75rem 0.85rem 0; }
-.sidebar-search-inner { position: relative; display: flex; align-items: center; }
+.sidebar-search-inner { position: relative; display: flex; align-items: center; margin: 10px;}
 .sidebar-search-inner .search-icon {
   position: absolute; left: 0.65rem; color: var(--text-faint); font-size: var(--font-xs); pointer-events: none;
 }
@@ -376,7 +378,7 @@ html, body {
    Padding goes on the .xterm element itself (not .term-pane): FitAddon reads
    the parent's computed size (border-box here) and subtracts only the
    .xterm element's own padding, so this keeps rows/cols from overflowing. */
-.term-pane:not(.sftp-pane) { background: #1e1e1e; }
+.term-pane:not(.sftp-pane) { background: var(--term-bg, #1e1e1e); }
 .term-pane > .xterm { padding: 0.75rem 1rem; }
 /* SFTP panel doesn't use FitAddon, so a normal pane padding is fine */
 .terminals .term-pane.sftp-pane { padding: 0.5rem; }
@@ -490,3 +492,18 @@ html, body {
 .login-lang { position: absolute; top: 1rem; right: 1rem; }
 .sidebar-footer { flex-wrap: wrap; }
 .sidebar-footer .lang-select { flex: 0 1 auto; min-width: 0; max-width: 6.5rem; }
+
+
+/* ---- terminal settings + about dialogs ---- */
+.settings-row { display: flex; gap: 0.8rem; }
+.settings-row > label { flex: 1; min-width: 0; }
+.dialog input[type="color"] { padding: 0.15rem; height: 2.2rem; cursor: pointer; }
+.dialog label.check-row { flex-direction: row; align-items: center; gap: 0.5rem; }
+.dialog label.check-row input { padding: 0; width: auto; }
+.about-desc { margin: 0; font-size: var(--font-sm); color: var(--text-muted); line-height: 1.5; }
+.about-version { margin: 0; font-size: var(--font-xs); color: var(--text-faint); user-select: text; }
+.about-links { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.55rem; }
+.about-links li { display: flex; flex-direction: column; gap: 0.15rem; font-size: var(--font-xs); color: var(--text-muted); }
+.about-links a { color: var(--accent); font-size: var(--font-sm); word-break: break-all; text-decoration: none; }
+.about-links a:hover { text-decoration: underline; }
+.about-links li.hidden { display: none; }

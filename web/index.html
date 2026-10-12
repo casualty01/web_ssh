@@ -67,6 +67,8 @@
       <button id="btnLogout" data-i18n="footer.signOut">Sign out</button>
       <button id="btnChangePassword" data-i18n-title="footer.changePassword" title="Change admin password">🔑</button>
       <button id="btnThemeToggle" title="Switch theme">🌙</button>
+      <button id="btnSettings" data-i18n-title="settings.title" title="Settings">⚙</button>
+      <button id="btnAbout" data-i18n-title="about.title" title="About">ℹ</button>
       <select id="langSelectApp" class="lang-select" aria-label="Language"></select>
     </div>
     <p id="buildVersionTagApp" class="build-version-tag"></p>
@@ -177,6 +179,61 @@
     <div class="dialog-actions">
       <button type="button" id="pwCancel" data-i18n="common.cancel">Cancel</button>
       <button type="submit" id="pwSave" data-i18n="common.save">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Terminal settings dialog -->
+<dialog id="settingsDialog" class="dialog">
+  <form id="settingsForm" method="dialog">
+    <h2 data-i18n="settings.title">Settings</h2>
+    <label><span data-i18n="settings.fontSize">Font size (px)</span>
+      <input id="setFontSize" type="number" min="8" max="32" step="1" />
+    </label>
+    <label><span data-i18n="settings.fontFamily">Font family</span>
+      <select id="setFontFamily"></select>
+    </label>
+    <label id="setFontCustomRow" class="hidden"><span data-i18n="settings.fontCustom">Custom font stack</span>
+      <input id="setFontCustom" type="text" placeholder="'JetBrains Mono', monospace" />
+    </label>
+    <div class="settings-row">
+      <label><span data-i18n="settings.bgColor">Background</span> <input id="setBg" type="color" /></label>
+      <label><span data-i18n="settings.fgColor">Text color</span> <input id="setFg" type="color" /></label>
+    </div>
+    <div class="settings-row">
+      <label><span data-i18n="settings.cursorStyle">Cursor style</span>
+        <select id="setCursorStyle">
+          <option value="block" data-i18n="settings.cursor.block">Block</option>
+          <option value="bar" data-i18n="settings.cursor.bar">Bar</option>
+          <option value="underline" data-i18n="settings.cursor.underline">Underline</option>
+        </select>
+      </label>
+      <label><span data-i18n="settings.scrollback">Scrollback lines</span>
+        <input id="setScrollback" type="number" min="500" max="100000" step="500" />
+      </label>
+    </div>
+    <label class="check-row"><input id="setCursorBlink" type="checkbox" /> <span data-i18n="settings.cursorBlink">Blinking cursor</span></label>
+    <small class="field-hint" data-i18n="settings.hint">Changes apply immediately to all open terminals and are saved in this browser.</small>
+    <div class="dialog-actions">
+      <button type="button" id="setReset" data-i18n="settings.reset">Reset to defaults</button>
+      <button type="submit" data-i18n="common.close">Close</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- About dialog -->
+<dialog id="aboutDialog" class="dialog about-dialog">
+  <form method="dialog">
+    <h2>WebSSH</h2>
+    <p class="about-desc" data-i18n="about.desc">A lightweight, self-hosted web SSH client: multi-session terminals, SFTP file manager and SSH tunnels in your browser.</p>
+    <p id="aboutVersion" class="about-version"></p>
+    <ul class="about-links">
+      <li><span data-i18n="about.github">GitHub</span><a id="aboutGithub" target="_blank" rel="noopener noreferrer"></a></li>
+      <li><span data-i18n="about.website">Website</span><a id="aboutWebsite" target="_blank" rel="noopener noreferrer"></a></li>
+      <li><span data-i18n="about.dockerhub">Docker Hub</span><a id="aboutDockerhub" target="_blank" rel="noopener noreferrer"></a></li>
+    </ul>
+    <div class="dialog-actions">
+      <button type="submit" data-i18n="common.close">Close</button>
     </div>
   </form>
 </dialog>
