@@ -28,6 +28,25 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusBadRequest, "name, host and username are required")
 			return
 		}
+		// "Copy session": the browser never receives stored secrets, so when
+		// ?copyFrom=<id> is given, blank secret fields are filled in from the
+		// source session (only if the auth type is unchanged).
+		if src := r.URL.Query().Get("copyFrom"); src != "" {
+			if orig, err := s.store.GetSession(src); err == nil && orig.AuthType == in.AuthType {
+				if in.Password == "" {
+					in.Password = orig.Password
+				}
+				if in.PrivateKey == "" {
+					in.PrivateKey = orig.PrivateKey
+				}
+				if in.Passphrase == "" {
+					in.Passphrase = orig.Passphrase
+				}
+				if in.Term == "" {
+					in.Term = orig.Term
+				}
+			}
+		}
 		sess, err := s.store.CreateSession(in)
 		if err != nil {
 			writeErr(w, http.StatusInternalServerError, err.Error())

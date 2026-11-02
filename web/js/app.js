@@ -83,7 +83,7 @@
 
   function saveWorkspace() {
     try {
-      const tabs = state.openTabs.map((t) => ({ sessionId: t.sessionId, kind: t.kind, termId: t.termId || null }));
+      const tabs = state.openTabs.map((t) => ({ sessionId: t.sessionId, kind: t.kind, termId: t.termId || null, customName: t.customName || null }));
       const activeTabObj = state.openTabs.find((t) => t.id === state.activeTab);
       localStorage.setItem(WORKSPACE_KEY, JSON.stringify({
         layout: state.layout,
@@ -112,6 +112,7 @@
       if (t.kind === 'sftp') openSftpTab(sess);
       else openTerminalTab(sess, t.termId || undefined);
       const created = state.openTabs[state.openTabs.length - 1];
+      if (created && typeof t.customName === 'string' && t.customName) created.customName = t.customName.slice(0, 60);
       if (created && t.sessionId === saved.activeSessionId && t.kind === saved.activeKind) {
         activeId = created.id;
       }
@@ -122,6 +123,8 @@
     } else if (activeId) {
       showTab(activeId);
     }
+    renderTabBar();
+    saveWorkspace();
   }
 
   function matchesQuery(haystackParts, query) {
@@ -437,7 +440,7 @@
     </span>`;
     const actions = document.createElement('span');
     actions.className = 'item-actions';
-    actions.innerHTML = `<button data-act="edit" title="${escapeHtml(t('common.edit'))}">✎</button><button data-act="files" title="${escapeHtml(t('item.files'))}">📁</button><button data-act="del" title="${escapeHtml(t('common.delete'))}">🗑</button>`;
+    actions.innerHTML = `<button data-act="edit" title="${escapeHtml(t('common.edit'))}">✎</button><button data-act="files" title="${escapeHtml(t('item.files'))}">📁</button><button data-act="copy" title="${escapeHtml(t('session.copy'))}">⧉</button><button data-act="del" title="${escapeHtml(t('common.delete'))}">🗑</button>`;
     row.appendChild(actions);
 
     row.addEventListener('click', (e) => {
@@ -461,6 +464,23 @@
         await refreshAll();
       }
     };
+    actions.querySelector('[data-act="copy"]').onclick = (e) => {
+      e.stopPropagation();
+      openSessionDialog(s, { copy: true });
+    };
+    row.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      const act = (name) => () => actions.querySelector(`[data-act="${name}"]`).click();
+      showContextMenu(e.clientX, e.clientY, [
+        { label: t('ctx.openTerminal'), action: () => openTerminalTab(s) },
+        { label: t('item.files'), action: act('files') },
+        { separator: true },
+        { label: t('common.edit'), action: act('edit') },
+        { label: t('session.copy'), action: act('copy') },
+        { separator: true },
+        { label: t('common.delete'), danger: true, action: act('del') },
+      ]);
+    });
     return row;
   }
 
@@ -501,10 +521,12 @@
     return Math.min(Math.max(n, 0), 3600);
   }
 
-  function openSessionDialog(sess) {
-    document.getElementById('sessionDialogTitle').textContent = t(sess ? 'session.dialog.edit' : 'session.dialog.new');
-    document.getElementById('sessId').value = sess ? sess.id : '';
-    document.getElementById('sessName').value = sess ? sess.name : '';
+  function openSessionDialog(sess, opts) {
+    const copy = !!(sess && opts && opts.copy);
+    document.getElementById('sessionDialogTitle').textContent = t(copy ? 'session.dialog.copy' : (sess ? 'session.dialog.edit' : 'session.dialog.new'));
+    document.getElementById('sessId').value = sess && !copy ? sess.id : '';
+    document.getElementById('sessCopyFrom').value = copy ? sess.id : '';
+    document.getElementById('sessName').value = sess ? (copy ? t('session.copyName', { name: sess.name }) : sess.name) : '';
     document.getElementById('sessGroup').value = sess ? (sess.groupId || '') : '';
     document.getElementById('sessHost').value = sess ? sess.host : '';
     document.getElementById('sessPort').value = sess ? sess.port : 22;
@@ -534,7 +556,11 @@
       keepAliveInterval: parseKeepAlive(document.getElementById('sessKeepAlive').value),
     };
     if (id) await api(`/api/sessions/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
-    else await api('/api/sessions', { method: 'POST', body: JSON.stringify(payload) });
+    else {
+      const copyFrom = document.getElementById('sessCopyFrom').value;
+      const url = '/api/sessions' + (copyFrom ? `?copyFrom=${encodeURIComponent(copyFrom)}` : '');
+      await api(url, { method: 'POST', body: JSON.stringify(payload) });
+    }
     sessionDialog.close();
     await refreshAll();
   });
@@ -822,6 +848,226 @@
     aboutDialog.showModal();
   });
 
+
+  // ---------------- context menu ----------------
+  let ctxMenuEl = null;
+
+  function hideContextMenu() {
+    if (ctxMenuEl) { ctxMenuEl.remove(); ctxMenuEl = null; }
+  }
+
+  function showContextMenu(x, y, items) {
+    hideContextMenu();
+    const menu = document.createElement('div');
+    menu.className = 'ctx-menu';
+    for (const it of items) {
+      if (it.separator) {
+        const sep = document.createElement('div');
+        sep.className = 'ctx-sep';
+        menu.appendChild(sep);
+        continue;
+      }
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'ctx-item' + (it.danger ? ' danger' : '');
+      b.textContent = it.label;
+      b.disabled = !!it.disabled;
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        hideContextMenu();
+        it.action();
+      });
+      menu.appendChild(b);
+    }
+    document.body.appendChild(menu);
+    const r = menu.getBoundingClientRect();
+    menu.style.left = Math.max(4, Math.min(x, window.innerWidth - r.width - 4)) + 'px';
+    menu.style.top = Math.max(4, Math.min(y, window.innerHeight - r.height - 4)) + 'px';
+    ctxMenuEl = menu;
+  }
+
+  document.addEventListener('click', hideContextMenu);
+  document.addEventListener('contextmenu', (e) => {
+    if (ctxMenuEl && !e.target.closest('.ctx-menu')) hideContextMenu();
+  }, true);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideContextMenu(); });
+  window.addEventListener('blur', hideContextMenu);
+  window.addEventListener('resize', hideContextMenu);
+
+  // ---------------- tab status / reconnect / duplicate / bulk close ----------------
+  // status: 'connecting' | 'connected' | 'disconnected' | 'error'
+  function setTabStatus(tab, status) {
+    tab.status = status;
+    const dot = tabBar.querySelector(`.tab[data-tab-id="${tab.id}"] .tab-status`);
+    if (dot) {
+      dot.className = 'tab-status ' + status;
+      dot.title = t('tab.status.' + status);
+    }
+    if (tab.overlay) {
+      const bad = status === 'disconnected' || status === 'error';
+      tab.overlay.classList.toggle('hidden', !bad);
+      tab.overlay.querySelector('.term-overlay-msg').textContent =
+        t(status === 'error' ? 'term.overlay.failed' : 'term.overlay.disconnected');
+      tab.overlay.querySelector('button').textContent = t('term.reconnect');
+    }
+  }
+
+  function refreshTabStatusTexts() {
+    for (const tb of state.openTabs) setTabStatus(tb, tb.status || 'connected');
+  }
+
+  // Detach the current socket (the server keeps the shell for its idle grace
+  // period) and connect again. If the shell itself has ended, start a new one.
+  function reconnectTab(tab) {
+    if (!tab || tab.kind !== 'terminal') return;
+    const old = tab.ws;
+    tab.ws = null;
+    if (old) {
+      old.onopen = old.onmessage = old.onclose = old.onerror = null;
+      try { old.close(); } catch (_) {}
+    }
+    if (tab.shellClosed) {
+      tab.termId = genTermId();
+      tab.shellClosed = false;
+      tab.term.write(`\r\n\x1b[90m${t('term.reconnecting')}\x1b[0m\r\n`);
+      saveWorkspace();
+    } else {
+      // Reattaching replays the shell's scrollback, so clear the screen first
+      // to avoid showing the same output twice.
+      tab.term.reset();
+    }
+    try { tab.fitAddon.fit(); } catch (_) {}
+    connectWS(tab);
+  }
+
+  // Tabs can be renamed locally (browser only, saved with the workspace);
+  // the saved session name on the server is never touched.
+  function tabLabel(tb) {
+    return tb.customName || tb.name;
+  }
+
+  function applyTabName(tb, input) {
+    const name = String(input || '').trim().slice(0, 60);
+    tb.customName = name && name !== tb.name ? name : null;
+    renderTabBar();
+    if (state.layout !== 'single') renderSplitSelects();
+    saveWorkspace();
+  }
+
+  // Rename in place: the tab label turns into a text box. Enter / blur
+  // saves, Esc cancels. Empty text restores the session name.
+  function renameTab(tb) {
+    const el = tabBar.querySelector(`.tab[data-tab-id="${tb.id}"]`);
+    const label = el && el.querySelector('.tab-label');
+    if (!label) {
+      const input = prompt(t('tab.renamePrompt'), tabLabel(tb));
+      if (input !== null) applyTabName(tb, input);
+      return;
+    }
+    if (el.querySelector('.tab-rename')) return;
+    const box = document.createElement('input');
+    box.type = 'text';
+    box.className = 'tab-rename';
+    box.maxLength = 60;
+    box.value = tabLabel(tb);
+    box.title = t('tab.renamePrompt');
+    label.style.display = 'none';
+    label.after(box);
+    el.draggable = false; // otherwise text selection inside the input starts a tab drag
+
+    let done = false;
+    const finish = (save) => {
+      if (done) return;
+      done = true;
+      if (save) applyTabName(tb, box.value);
+      else renderTabBar();
+    };
+    for (const ev of ['click', 'dblclick', 'mousedown', 'contextmenu', 'auxclick']) {
+      box.addEventListener(ev, (e) => e.stopPropagation());
+    }
+    box.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+      else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+    });
+    box.addEventListener('blur', () => finish(true));
+    // Wait a tick so the context menu's own click handling doesn't steal focus.
+    setTimeout(() => { box.focus(); box.select(); }, 0);
+  }
+
+  // Disconnect only the backend shell; the tab and its terminal window stay
+  // (scrollback remains readable) and can be reconnected later, which starts
+  // a fresh shell.
+  function canDisconnectTab(tb) {
+    return tb.kind === 'terminal' && !!tb.ws && tb.ws.readyState === WebSocket.OPEN;
+  }
+
+  function disconnectTab(tb) {
+    if (!canDisconnectTab(tb)) return;
+    tb.userDisconnect = true;
+    try { tb.ws.send(JSON.stringify({ type: 'close' })); } catch (_) {}
+    // The server answers with a "closed" message and drops the socket; that
+    // handler (see connectWS) marks the tab disconnected.
+  }
+
+  function duplicateTab(tb) {
+    const sess = state.sessions.find((s) => s.id === tb.sessionId);
+    if (!sess) return;
+    const idx = state.openTabs.indexOf(tb);
+    if (tb.kind === 'sftp') openSftpTab(sess);
+    else openTerminalTab(sess);
+    // Place the copy right next to the original instead of at the far end.
+    const last = state.openTabs.length - 1;
+    if (idx >= 0 && idx + 1 < last) {
+      const [created] = state.openTabs.splice(last, 1);
+      state.openTabs.splice(idx + 1, 0, created);
+      renderTabBar();
+      if (state.layout !== 'single') renderSplitSelects();
+      saveWorkspace();
+    }
+  }
+
+  function closeTabs(list) {
+    if (list.length > 1 && !confirm(t('tab.confirmCloseMany', { count: list.length }))) return;
+    for (const tb of list) closeTab(tb.id);
+  }
+
+  function moveTab(srcId, targetId, after) {
+    const from = state.openTabs.findIndex((x) => x.id === srcId);
+    if (from === -1) return;
+    const [moved] = state.openTabs.splice(from, 1);
+    let to = state.openTabs.findIndex((x) => x.id === targetId);
+    if (to === -1) to = state.openTabs.length;
+    else if (after) to += 1;
+    state.openTabs.splice(to, 0, moved);
+    renderTabBar();
+    if (state.layout !== 'single') renderSplitSelects();
+    saveWorkspace();
+  }
+
+  function showTabMenu(x, y, tb) {
+    const idx = state.openTabs.indexOf(tb);
+    const hasSession = state.sessions.some((s) => s.id === tb.sessionId);
+    const othersCount = state.openTabs.length - 1;
+    const rightCount = state.openTabs.length - idx - 1;
+    showContextMenu(x, y, [
+      { label: t('tab.menu.reconnect'), action: () => (tb.kind === 'terminal' ? reconnectTab(tb) : (tb.reload && tb.reload())) },
+      { label: t('tab.menu.disconnect'), disabled: !canDisconnectTab(tb), action: () => disconnectTab(tb) },
+      { label: t('tab.menu.rename'), action: () => renameTab(tb) },
+      { label: t('tab.menu.duplicate'), disabled: !hasSession, action: () => duplicateTab(tb) },
+      { separator: true },
+      { label: t('tab.menu.close'), action: () => closeTab(tb.id) },
+      { label: t('tab.menu.closeOthers'), disabled: othersCount === 0, action: () => closeTabs(state.openTabs.filter((x) => x !== tb)) },
+      { label: t('tab.menu.closeRight'), disabled: rightCount === 0, action: () => closeTabs(state.openTabs.slice(idx + 1)) },
+      { label: t('tab.menu.closeAll'), danger: true, action: () => closeTabs(state.openTabs.slice()) },
+    ]);
+  }
+
+  let draggingTabId = null;
+  function clearTabDropMarks() {
+    tabBar.querySelectorAll('.drop-before, .drop-after').forEach((el) => el.classList.remove('drop-before', 'drop-after'));
+  }
+
   // ---------------- terminal tabs ----------------
   const tabBar = document.getElementById('tabBar');
   const terminalsEl = document.getElementById('terminals');
@@ -847,7 +1093,13 @@
     pane.id = tabId;
     terminalsEl.appendChild(pane);
 
-    const tab = { id: tabId, sessionId: sess.id, termId, name: sess.name, kind: 'terminal', term, fitAddon, ws: null, pane };
+    const tab = { id: tabId, sessionId: sess.id, termId, name: sess.name, kind: 'terminal', term, fitAddon, ws: null, pane, status: 'connecting', shellClosed: false, overlay: null };
+    const overlay = document.createElement('div');
+    overlay.className = 'term-overlay hidden';
+    overlay.innerHTML = '<span class="term-overlay-msg"></span><button type="button"></button>';
+    overlay.querySelector('button').addEventListener('click', () => reconnectTab(tab));
+    pane.appendChild(overlay);
+    tab.overlay = overlay;
     state.openTabs.push(tab);
     renderTabBar();
     showTab(tabId);
@@ -868,6 +1120,12 @@
     });
 
     term.onData((data) => {
+      // Dead connection: Enter reconnects, everything else is ignored
+      // (don't type into a shell that no longer exists).
+      if (tab.status === 'disconnected' || tab.status === 'error') {
+        if (data === '\r') reconnectTab(tab);
+        return;
+      }
       if (tab.ws && tab.ws.readyState === WebSocket.OPEN) {
         tab.ws.send(JSON.stringify({ type: 'data', data }));
       }
@@ -889,16 +1147,37 @@
     const { cols, rows } = tab.term;
     const ws = new WebSocket(wsURL(tab.sessionId, tab.termId, cols, rows));
     tab.ws = ws;
+    setTabStatus(tab, 'connecting');
+    // The socket opens before the SSH dial finishes, so "connected" really
+    // means the first output arrived. A quiet reattached shell may send none,
+    // hence the fallback timer.
+    ws.onopen = () => {
+      setTimeout(() => {
+        if (tab.ws === ws && ws.readyState === WebSocket.OPEN && tab.status === 'connecting') setTabStatus(tab, 'connected');
+      }, 3000);
+    };
     ws.onmessage = (evt) => {
+      if (tab.ws !== ws) return;
       try {
         const msg = JSON.parse(evt.data);
-        if (msg.type === 'data') tab.term.write(msg.data);
-        else if (msg.type === 'error') tab.term.write(`\r\n\x1b[31m${t('term.error', { message: msg.message })}\x1b[0m\r\n`);
-        else if (msg.type === 'closed') tab.term.write(`\r\n\x1b[33m${t('term.closed')}\x1b[0m\r\n`);
+        if (msg.type === 'data') {
+          if (tab.status !== 'connected') setTabStatus(tab, 'connected');
+          tab.term.write(msg.data);
+        } else if (msg.type === 'error') {
+          tab.term.write(`\r\n\x1b[31m${t('term.error', { message: msg.message })}\x1b[0m\r\n`);
+          setTabStatus(tab, 'error');
+        } else if (msg.type === 'closed') {
+          tab.shellClosed = true;
+          tab.term.write(`\r\n\x1b[33m${t(tab.userDisconnect ? 'term.disconnectedByUser' : 'term.closed')}\x1b[0m\r\n`);
+          tab.userDisconnect = false;
+          setTabStatus(tab, 'disconnected');
+        }
       } catch (_) {}
     };
     ws.onclose = () => {
-      tab.term.write(`\r\n\x1b[33m${t('term.disconnected')}\x1b[0m\r\n`);
+      if (tab.ws !== ws) return;
+      if (!tab.shellClosed) tab.term.write(`\r\n\x1b[33m${t('term.disconnected')}\x1b[0m\r\n`);
+      if (tab.status !== 'error') setTabStatus(tab, 'disconnected');
       // A closed/failed socket can mean the network hiccuped, or it can mean
       // the auth cookie expired (the ws upgrade is behind the same auth
       // middleware as the REST API, so an expired session gets the upgrade
@@ -927,19 +1206,61 @@
     tabBar.innerHTML = '';
     const isSplit = state.layout !== 'single';
     emptyState.classList.toggle('hidden', state.openTabs.length > 0 || isSplit);
-    for (const t of state.openTabs) {
+    for (const tb of state.openTabs) {
       const el = document.createElement('div');
-      const paneIdx = state.paneTabs.indexOf(t.id);
-      const isActive = isSplit ? paneIdx !== -1 : t.id === state.activeTab;
+      const paneIdx = state.paneTabs.indexOf(tb.id);
+      const isActive = isSplit ? paneIdx !== -1 : tb.id === state.activeTab;
       el.className = 'tab' + (isActive ? ' active' : '');
-      const icon = t.kind === 'sftp' ? '📁' : '🖥';
+      el.dataset.tabId = tb.id;
+      el.draggable = true;
+      const icon = tb.kind === 'sftp' ? '📁' : '🖥';
+      const status = tb.status || 'connected';
       const badge = isSplit && paneIdx !== -1
         ? `<span class="split-badge">${PANE_BADGES[paneIdx] || paneIdx}</span>`
         : '';
-      el.title = t.name;
-      el.innerHTML = `<span class="tab-label">${icon} ${escapeHtml(t.name)}</span>${badge}<span class="close">✕</span>`;
-      el.onclick = () => showTab(t.id);
-      el.querySelector('.close').onclick = (e) => { e.stopPropagation(); closeTab(t.id); };
+      el.title = tabLabel(tb);
+      el.innerHTML = `<span class="tab-status ${status}" title="${escapeHtml(t('tab.status.' + status))}"></span><span class="tab-label">${icon} ${escapeHtml(tabLabel(tb))}</span>${badge}<span class="close">✕</span>`;
+      el.onclick = () => showTab(tb.id);
+      el.querySelector('.close').onclick = (e) => { e.stopPropagation(); closeTab(tb.id); };
+      el.addEventListener('dblclick', (e) => {
+        if (e.target.closest('.close')) return;
+        renameTab(tb);
+      });
+      el.addEventListener('auxclick', (e) => { if (e.button === 1) { e.preventDefault(); closeTab(tb.id); } });
+      el.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        showTabMenu(e.clientX, e.clientY, tb);
+      });
+
+      // drag to reorder
+      el.addEventListener('dragstart', (e) => {
+        draggingTabId = tb.id;
+        e.dataTransfer.effectAllowed = 'move';
+        try { e.dataTransfer.setData('text/plain', tb.id); } catch (_) {}
+        el.classList.add('dragging');
+      });
+      el.addEventListener('dragend', () => {
+        draggingTabId = null;
+        el.classList.remove('dragging');
+        clearTabDropMarks();
+      });
+      el.addEventListener('dragover', (e) => {
+        if (!draggingTabId || draggingTabId === tb.id) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        const r = el.getBoundingClientRect();
+        const after = e.clientX > r.left + r.width / 2;
+        clearTabDropMarks();
+        el.classList.add(after ? 'drop-after' : 'drop-before');
+      });
+      el.addEventListener('dragleave', () => el.classList.remove('drop-before', 'drop-after'));
+      el.addEventListener('drop', (e) => {
+        e.preventDefault();
+        if (!draggingTabId || draggingTabId === tb.id) return;
+        const r = el.getBoundingClientRect();
+        moveTab(draggingTabId, tb.id, e.clientX > r.left + r.width / 2);
+        draggingTabId = null;
+      });
       tabBar.appendChild(el);
     }
   }
@@ -1186,7 +1507,7 @@
           .map((t) => {
             const icon = t.kind === 'sftp' ? '📁' : '🖥';
             const sel = t.id === state.paneTabs[i] ? ' selected' : '';
-            return `<option value="${t.id}"${sel}>${icon} ${escapeHtml(t.name)}</option>`;
+            return `<option value="${t.id}"${sel}>${icon} ${escapeHtml(tabLabel(t))}</option>`;
           })
       );
       slot.select.innerHTML = options.join('');
@@ -1308,6 +1629,116 @@
   }
 
   // ---------------- SFTP browser tab ----------------
+  const SFTP_SORT_KEY = 'webssh-sftp-sort';
+  const SFTP_CONC_KEY = 'webssh-sftp-concurrency';
+  const SFTP_DEFAULT_CONCURRENCY = 5;
+  const SFTP_MAX_CONCURRENCY = 16;
+  // Files at/over SOLO bytes get an upload request of their own; smaller
+  // ones are packed into shared requests so a folder of thousands of tiny
+  // files doesn't pay one SSH handshake per file.
+  const UPLOAD_SOLO_BYTES = 4 * 1024 * 1024;
+  const UPLOAD_BATCH_BYTES = 8 * 1024 * 1024;
+  const UPLOAD_BATCH_FILES = 100;
+  const IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp|ico|svg)$/i;
+  // Copy/Cut clipboard for the SFTP browser, keyed by session id so two tabs
+  // of the same server share it: { op: 'copy'|'move', paths: [...] }.
+  const sftpClipboard = {};
+
+  function loadSftpSort() {
+    try {
+      const s = JSON.parse(localStorage.getItem(SFTP_SORT_KEY) || 'null');
+      if (s && ['name', 'mtime', 'mode', 'size'].includes(s.key)) return { key: s.key, dir: s.dir === 'desc' ? 'desc' : 'asc' };
+    } catch (_) {}
+    return { key: 'name', dir: 'asc' };
+  }
+
+  function clampConcurrency(n) {
+    n = parseInt(n, 10);
+    if (!Number.isFinite(n)) return SFTP_DEFAULT_CONCURRENCY;
+    return Math.max(1, Math.min(SFTP_MAX_CONCURRENCY, n));
+  }
+
+  function loadConcurrency() {
+    try { return clampConcurrency(localStorage.getItem(SFTP_CONC_KEY) || SFTP_DEFAULT_CONCURRENCY); } catch (_) {}
+    return SFTP_DEFAULT_CONCURRENCY;
+  }
+
+  function fmtDateTime(v) {
+    const d = new Date(v);
+    if (isNaN(d.getTime())) return '';
+    const p = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  }
+
+  // Full-screen image viewer. `images` are SFTP entries; ←/→ switch between
+  // them, Esc closes, clicking the picture toggles fit / actual size.
+  function openImagePreview(sessId, images, startIndex) {
+    if (!images.length) return;
+    let idx = Math.max(0, Math.min(startIndex, images.length - 1));
+    const overlay = document.createElement('div');
+    overlay.className = 'img-preview';
+    overlay.innerHTML = `
+      <div class="img-preview-bar">
+        <span class="img-preview-title"></span>
+        <span class="img-preview-count"></span>
+        <button type="button" class="img-preview-dl"></button>
+        <button type="button" class="img-preview-close">✕</button>
+      </div>
+      <button type="button" class="img-preview-nav prev">‹</button>
+      <div class="img-preview-stage"><img alt=""><div class="img-preview-msg"></div></div>
+      <button type="button" class="img-preview-nav next">›</button>`;
+    const titleEl = overlay.querySelector('.img-preview-title');
+    const countEl = overlay.querySelector('.img-preview-count');
+    const dlBtn = overlay.querySelector('.img-preview-dl');
+    const closeBtn = overlay.querySelector('.img-preview-close');
+    const stage = overlay.querySelector('.img-preview-stage');
+    const img = overlay.querySelector('img');
+    const msg = overlay.querySelector('.img-preview-msg');
+    const prevBtn = overlay.querySelector('.img-preview-nav.prev');
+    const nextBtn = overlay.querySelector('.img-preview-nav.next');
+    dlBtn.textContent = t('sftp.download');
+    closeBtn.title = t('common.close');
+    const fileURL = (p, inline) => `/api/sftp/${sessId}/download?path=${encodeURIComponent(p)}${inline ? '&inline=1' : ''}`;
+
+    function show(i) {
+      idx = (i + images.length) % images.length;
+      const e = images[idx];
+      titleEl.textContent = e.name;
+      countEl.textContent = `${idx + 1} / ${images.length}`;
+      stage.classList.remove('zoom');
+      msg.textContent = t('sftp.loading');
+      msg.classList.remove('hidden');
+      img.classList.add('hidden');
+      img.onload = () => { msg.classList.add('hidden'); img.classList.remove('hidden'); };
+      img.onerror = () => { msg.textContent = t('sftp.previewFailed'); };
+      img.src = fileURL(e.path, true);
+      prevBtn.classList.toggle('hidden', images.length < 2);
+      nextBtn.classList.toggle('hidden', images.length < 2);
+    }
+
+    function close() {
+      document.removeEventListener('keydown', onKey, true);
+      img.onload = img.onerror = null;
+      img.removeAttribute('src');
+      overlay.remove();
+    }
+    function onKey(e) {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); e.stopPropagation(); show(idx - 1); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); e.stopPropagation(); show(idx + 1); }
+    }
+
+    closeBtn.onclick = close;
+    dlBtn.onclick = () => { window.location.href = fileURL(images[idx].path, false); };
+    prevBtn.onclick = (e) => { e.stopPropagation(); show(idx - 1); };
+    nextBtn.onclick = (e) => { e.stopPropagation(); show(idx + 1); };
+    img.onclick = (e) => { e.stopPropagation(); stage.classList.toggle('zoom'); };
+    stage.onclick = (e) => { if (e.target === stage) close(); };
+    document.addEventListener('keydown', onKey, true);
+    document.body.appendChild(overlay);
+    show(idx);
+  }
+
   function openSftpTab(sess) {
     const tabId = `sftp-${sess.id}-${Date.now()}`;
     const pane = document.createElement('div');
@@ -1316,11 +1747,25 @@
     pane.innerHTML = `
       <div class="sftp-toolbar">
         <button class="sftp-up" data-i18n-title="sftp.up">⬆</button>
-        <span class="sftp-path"></span>
-        <span class="sftp-spacer"></span>
+        <div class="sftp-path" data-i18n-title="sftp.pathHint">
+          <span class="sftp-crumbs"></span>
+          <input type="text" class="sftp-path-input hidden" spellcheck="false" autocomplete="off" data-i18n-placeholder="sftp.pathPlaceholder" />
+        </div>
+        <button class="sftp-edit-path" data-i18n-title="sftp.editPath">✎</button>
         <button class="sftp-refresh" data-i18n-title="sftp.refresh">⟳</button>
         <button class="sftp-mkdir" data-i18n-title="sftp.newFolder" data-i18n="sftp.newFolderBtn">＋Folder</button>
-        <label class="sftp-upload-btn"><span data-i18n="sftp.upload">⬆ Upload</span><input type="file" class="sftp-upload-input" multiple hidden /></label>
+        <button class="sftp-paste hidden" type="button"></button>
+        <label class="sftp-conc" data-i18n-title="sftp.concurrencyTitle"><span data-i18n="sftp.concurrency">Parallel</span><input type="number" class="sftp-conc-input" min="1" max="${SFTP_MAX_CONCURRENCY}" step="1" /></label>
+        <label class="sftp-upload-btn sftp-upload-files-btn"><span data-i18n="sftp.upload">⬆ Upload</span><input type="file" class="sftp-upload-input" multiple hidden /></label>
+        <label class="sftp-upload-btn sftp-upload-folder-btn" data-i18n-title="sftp.uploadFolderTitle"><span data-i18n="sftp.uploadFolder">⬆ Folder</span><input type="file" class="sftp-upload-folder-input" webkitdirectory multiple hidden /></label>
+      </div>
+      <div class="sftp-batch hidden">
+        <span class="sftp-batch-count"></span>
+        <button type="button" data-batch="copy" data-i18n="sftp.batchCopy">Copy</button>
+        <button type="button" data-batch="move" data-i18n="sftp.batchCut">Cut</button>
+        <button type="button" data-batch="download" data-i18n="sftp.batchDownload">Download</button>
+        <button type="button" data-batch="remove" class="danger" data-i18n="sftp.batchDelete">Delete</button>
+        <button type="button" data-batch="clear" data-i18n="sftp.batchClear">Clear</button>
       </div>
       <div class="sftp-status"></div>
       <div class="sftp-transfer hidden">
@@ -1336,89 +1781,378 @@
     I18n.apply(pane);
     terminalsEl.appendChild(pane);
 
-    const tab = { id: tabId, sessionId: sess.id, name: sess.name, kind: 'sftp', pane, cwd: '.' };
+    const tab = { id: tabId, sessionId: sess.id, name: sess.name, kind: 'sftp', pane, cwd: '.', status: 'connected', entries: [], sort: loadSftpSort(), selected: new Set() };
     state.openTabs.push(tab);
     renderTabBar();
     showTab(tabId);
     saveWorkspace();
 
-    const pathEl = pane.querySelector('.sftp-path');
+    const pathBox = pane.querySelector('.sftp-path');
+    const crumbsEl = pane.querySelector('.sftp-crumbs');
+    const pathInput = pane.querySelector('.sftp-path-input');
     const listEl = pane.querySelector('.sftp-list');
     const statusEl = pane.querySelector('.sftp-status');
     const uploadInput = pane.querySelector('.sftp-upload-input');
-    const uploadLabel = pane.querySelector('.sftp-upload-btn');
+    const folderInput = pane.querySelector('.sftp-upload-folder-input');
+    const uploadLabels = pane.querySelectorAll('.sftp-upload-btn');
+    const concInput = pane.querySelector('.sftp-conc-input');
     const xferEl = pane.querySelector('.sftp-transfer');
     const xferTitle = pane.querySelector('.xfer-title');
     const xferFill = pane.querySelector('.xfer-bar-fill');
     const xferDetail = pane.querySelector('.xfer-detail');
     const xferCancel = pane.querySelector('.xfer-cancel');
+    const batchBar = pane.querySelector('.sftp-batch');
+    const batchCount = pane.querySelector('.sftp-batch-count');
+    const pasteBtn = pane.querySelector('.sftp-paste');
 
     function setStatus(msg, isError) {
       statusEl.textContent = msg || '';
       statusEl.classList.toggle('error', !!isError);
     }
 
+    // ---- path bar: clickable segments + type-a-path mode ----
+    function renderCrumbs(p) {
+      crumbsEl.innerHTML = '';
+      const abs = p.startsWith('/');
+      const segs = p.split('/').filter(Boolean);
+      const mk = (label, target) => {
+        const b = document.createElement('span');
+        b.className = 'crumb';
+        b.textContent = label;
+        b.title = target;
+        b.onclick = (e) => { e.stopPropagation(); load(target); };
+        return b;
+      };
+      if (abs) crumbsEl.appendChild(mk('/', '/'));
+      segs.forEach((seg, i) => {
+        if (i > 0) {
+          const sep = document.createElement('span');
+          sep.className = 'crumb-sep';
+          sep.textContent = '/';
+          crumbsEl.appendChild(sep);
+        }
+        const target = (abs ? '/' : '') + segs.slice(0, i + 1).join('/');
+        crumbsEl.appendChild(mk(seg, target));
+      });
+      if (!abs && segs.length === 0) crumbsEl.appendChild(mk(p || '.', p || '.'));
+    }
+
+    function startPathEdit() {
+      if (!pathInput.classList.contains('hidden')) return;
+      pathInput.value = tab.cwd;
+      crumbsEl.classList.add('hidden');
+      pathInput.classList.remove('hidden');
+      pathInput.focus();
+      pathInput.select();
+    }
+    function endPathEdit() {
+      pathInput.classList.add('hidden');
+      crumbsEl.classList.remove('hidden');
+    }
+    function resolveTypedPath(v) {
+      v = v.trim();
+      if (!v) return null;
+      if (v === '~') return '.';
+      if (v.startsWith('~/')) return './' + v.slice(2);
+      if (v.startsWith('/')) return v;
+      return tab.cwd.replace(/\/+$/, '') + '/' + v; // relative to the folder being viewed
+    }
+    pathBox.addEventListener('click', (e) => {
+      if (e.target === pathBox || e.target === crumbsEl) startPathEdit();
+    });
+    pane.querySelector('.sftp-edit-path').onclick = startPathEdit;
+    pathInput.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const target = resolveTypedPath(pathInput.value);
+        endPathEdit();
+        if (target) load(target);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        endPathEdit();
+      }
+    });
+    pathInput.addEventListener('blur', endPathEdit);
+
     async function load(dir) {
       setStatus(t('sftp.loading'));
       try {
         const res = await api(`/api/sftp/${sess.id}/list?path=${encodeURIComponent(dir)}`);
         tab.cwd = res.path || dir;
-        pathEl.textContent = tab.cwd;
-        renderEntries(res.entries || []);
+        renderCrumbs(tab.cwd);
+        tab.entries = res.entries || [];
+        // Keep only selections that still exist (reload after an operation),
+        // and drop them all when we moved to another folder.
+        const here = new Set(tab.entries.map((e) => e.path));
+        for (const p of Array.from(tab.selected)) if (!here.has(p)) tab.selected.delete(p);
+        tab.lastClicked = undefined;
+        renderEntries();
         setStatus('');
+        setTabStatus(tab, 'connected');
       } catch (err) {
         setStatus(err.message, true);
-        listEl.innerHTML = '';
+        setTabStatus(tab, 'error');
+      }
+    }
+    tab.reload = () => load(tab.cwd);
+    tab.refreshLang = () => renderEntries();
+
+    // ---- listing with sortable columns ----
+    function sortedEntries() {
+      const { key, dir } = tab.sort;
+      const m = dir === 'desc' ? -1 : 1;
+      return tab.entries.slice().sort((a, b) => {
+        if (a.isDir !== b.isDir) return a.isDir ? -1 : 1; // folders always stay on top
+        let c = 0;
+        if (key === 'size') c = (a.isDir ? 0 : a.size) - (b.isDir ? 0 : b.size);
+        else if (key === 'mtime') c = new Date(a.modTime) - new Date(b.modTime);
+        else if (key === 'mode') c = String(a.mode).localeCompare(String(b.mode));
+        else c = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+        if (c !== 0) return c * m;
+        return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+      });
+    }
+
+    function setSort(key) {
+      if (tab.sort.key === key) tab.sort.dir = tab.sort.dir === 'asc' ? 'desc' : 'asc';
+      else tab.sort = { key, dir: key === 'mtime' ? 'desc' : 'asc' }; // newest first is the useful default for dates
+      try { localStorage.setItem(SFTP_SORT_KEY, JSON.stringify(tab.sort)); } catch (_) {}
+      renderEntries();
+    }
+
+    function buildHead() {
+      const head = document.createElement('div');
+      head.className = 'sftp-head';
+      const all = document.createElement('input');
+      all.type = 'checkbox';
+      all.className = 'sftp-check';
+      all.title = t('sftp.selectAll');
+      const total = tab.entries.length;
+      all.checked = total > 0 && tab.selected.size === total;
+      all.indeterminate = tab.selected.size > 0 && tab.selected.size < total;
+      all.disabled = total === 0;
+      all.onchange = () => {
+        tab.selected.clear();
+        if (all.checked) tab.entries.forEach((e) => tab.selected.add(e.path));
+        renderEntries();
+      };
+      head.appendChild(all);
+      const cols = [['name', 'sftp-name', 'sftp.col.name'], ['mtime', 'sftp-mtime', 'sftp.col.mtime'], ['mode', 'sftp-mode', 'sftp.col.mode'], ['size', 'sftp-size', 'sftp.col.size']];
+      for (const [key, cls, i18nKey] of cols) {
+        const c = document.createElement('span');
+        c.className = `sftp-col ${cls}` + (tab.sort.key === key ? ' sorted' : '');
+        const arrow = tab.sort.key === key ? (tab.sort.dir === 'asc' ? ' ▲' : ' ▼') : '';
+        c.textContent = t(i18nKey) + arrow;
+        c.onclick = () => setSort(key);
+        head.appendChild(c);
+      }
+      const sp = document.createElement('span');
+      sp.className = 'sftp-actions-spacer';
+      head.appendChild(sp);
+      return head;
+    }
+
+    function renderEntries() {
+      const scrollTop = listEl.scrollTop;
+      listEl.innerHTML = '';
+      listEl.appendChild(buildHead());
+      const sorted = sortedEntries();
+      const images = sorted.filter((e) => !e.isDir && IMAGE_EXT.test(e.name));
+      sorted.forEach((entry, idx) => {
+        const row = document.createElement('div');
+        row.className = 'sftp-row' + (tab.selected.has(entry.path) ? ' selected' : '');
+        const isImage = !entry.isDir && IMAGE_EXT.test(entry.name);
+        const icon = entry.isDir ? '📁' : isImage ? '🖼' : '📄';
+        const sizeStr = entry.isDir ? '' : formatBytes(entry.size);
+        const linkMark = entry.isLink ? ' <span class="sftp-link">↪</span>' : '';
+        row.innerHTML = `
+          <input type="checkbox" class="sftp-check" ${tab.selected.has(entry.path) ? 'checked' : ''} />
+          <span class="sftp-name" title="${escapeHtml(entry.name)}">${icon} ${escapeHtml(entry.name)}${linkMark}</span>
+          <span class="sftp-mtime">${escapeHtml(fmtDateTime(entry.modTime))}</span>
+          <span class="sftp-mode">${escapeHtml(entry.mode || '')}</span>
+          <span class="sftp-size">${sizeStr}</span>
+          <span class="sftp-actions">
+            ${isImage ? `<button data-act="pv" title="${escapeHtml(t('sftp.preview'))}">👁</button>` : ''}
+            ${entry.isDir ? '' : `<button data-act="dl" title="${escapeHtml(t('sftp.download'))}">⬇</button>`}
+            <button data-act="rn" title="${escapeHtml(t('common.rename'))}">✎</button>
+            <button data-act="rm" title="${escapeHtml(t('common.delete'))}">🗑</button>
+          </span>`;
+        // Checkbox: click toggles; shift-click selects the range back to the
+        // last clicked row (in the currently sorted order).
+        const chk = row.querySelector('.sftp-check');
+        chk.onclick = (e) => {
+          e.stopPropagation();
+          if (e.shiftKey && tab.lastClicked !== undefined && sorted[tab.lastClicked]) {
+            const [a, b] = [Math.min(tab.lastClicked, idx), Math.max(tab.lastClicked, idx)];
+            for (let i = a; i <= b; i++) {
+              if (chk.checked) tab.selected.add(sorted[i].path); else tab.selected.delete(sorted[i].path);
+            }
+          } else if (chk.checked) tab.selected.add(entry.path);
+          else tab.selected.delete(entry.path);
+          tab.lastClicked = idx;
+          renderEntries();
+        };
+        const preview = () => openImagePreview(sess.id, images, images.indexOf(entry));
+        row.querySelector('.sftp-name').onclick = () => {
+          if (entry.isDir) load(entry.path);
+          else if (isImage) preview();
+        };
+        const pvBtn = row.querySelector('[data-act="pv"]');
+        if (pvBtn) pvBtn.onclick = (e) => { e.stopPropagation(); preview(); };
+        const dlBtn = row.querySelector('[data-act="dl"]');
+        if (dlBtn) dlBtn.onclick = (e) => {
+          e.stopPropagation();
+          window.location.href = `/api/sftp/${sess.id}/download?path=${encodeURIComponent(entry.path)}`;
+        };
+        row.querySelector('[data-act="rn"]').onclick = async (e) => {
+          e.stopPropagation();
+          const name = prompt(t('sftp.newName'), entry.name);
+          if (!name || name === entry.name) return;
+          const newPath = tab.cwd.replace(/\/$/, '') + '/' + name;
+          try {
+            await api(`/api/sftp/${sess.id}/rename`, { method: 'POST', body: JSON.stringify({ oldPath: entry.path, newPath }) });
+            load(tab.cwd);
+          } catch (err) { setStatus(err.message, true); }
+        };
+        row.querySelector('[data-act="rm"]').onclick = async (e) => {
+          e.stopPropagation();
+          if (!confirm(t(entry.isDir ? 'sftp.confirmDeleteDir' : 'sftp.confirmDelete', { name: entry.name }))) return;
+          try {
+            await api(`/api/sftp/${sess.id}/remove?path=${encodeURIComponent(entry.path)}`, { method: 'DELETE' });
+            load(tab.cwd);
+          } catch (err) { setStatus(err.message, true); }
+        };
+        listEl.appendChild(row);
+      });
+      listEl.scrollTop = scrollTop;
+      renderBatchBar();
+    }
+
+    // ---- batch operations: copy / cut + paste, delete, download ----
+    function selectedEntries() {
+      return tab.entries.filter((e) => tab.selected.has(e.path));
+    }
+
+    function renderBatchBar() {
+      const n = tab.selected.size;
+      batchBar.classList.toggle('hidden', n === 0);
+      batchCount.textContent = t('sftp.selectedN', { count: n });
+      const clip = sftpClipboard[sess.id];
+      pasteBtn.classList.toggle('hidden', !clip);
+      if (clip) {
+        pasteBtn.textContent = t(clip.op === 'move' ? 'sftp.pasteMove' : 'sftp.pasteCopy', { count: clip.paths.length });
+        pasteBtn.title = t('sftp.pasteHint');
       }
     }
 
-    function renderEntries(entries) {
-      listEl.innerHTML = '';
-      entries
-        .slice()
-        .sort((a, b) => (a.isDir === b.isDir ? a.name.localeCompare(b.name) : a.isDir ? -1 : 1))
-        .forEach((entry) => {
-          const row = document.createElement('div');
-          row.className = 'sftp-row';
-          const icon = entry.isDir ? '📁' : '📄';
-          const sizeStr = entry.isDir ? '' : formatBytes(entry.size);
-          row.innerHTML = `
-            <span class="sftp-name">${icon} ${escapeHtml(entry.name)}</span>
-            <span class="sftp-size">${sizeStr}</span>
-            <span class="sftp-actions">
-              ${entry.isDir ? '' : `<button data-act="dl" title="${escapeHtml(t('sftp.download'))}">⬇</button>`}
-              <button data-act="rn" title="${escapeHtml(t('common.rename'))}">✎</button>
-              <button data-act="rm" title="${escapeHtml(t('common.delete'))}">🗑</button>
-            </span>`;
-          row.querySelector('.sftp-name').onclick = () => {
-            if (entry.isDir) load(entry.path);
-          };
-          const dlBtn = row.querySelector('[data-act="dl"]');
-          if (dlBtn) dlBtn.onclick = (e) => {
-            e.stopPropagation();
-            window.location.href = `/api/sftp/${sess.id}/download?path=${encodeURIComponent(entry.path)}`;
-          };
-          row.querySelector('[data-act="rn"]').onclick = async (e) => {
-            e.stopPropagation();
-            const name = prompt(t('sftp.newName'), entry.name);
-            if (!name || name === entry.name) return;
-            const newPath = tab.cwd.replace(/\/$/, '') + '/' + name;
-            try {
-              await api(`/api/sftp/${sess.id}/rename`, { method: 'POST', body: JSON.stringify({ oldPath: entry.path, newPath }) });
-              load(tab.cwd);
-            } catch (err) { setStatus(err.message, true); }
-          };
-          row.querySelector('[data-act="rm"]').onclick = async (e) => {
-            e.stopPropagation();
-            if (!confirm(t(entry.isDir ? 'sftp.confirmDeleteDir' : 'sftp.confirmDelete', { name: entry.name }))) return;
-            try {
-              await api(`/api/sftp/${sess.id}/remove?path=${encodeURIComponent(entry.path)}`, { method: 'DELETE' });
-              load(tab.cwd);
-            } catch (err) { setStatus(err.message, true); }
-          };
-          listEl.appendChild(row);
-        });
+    // Shows the outcome of a batch call: a one-line summary plus up to 8
+    // failed paths with the reason, same shape as the upload report.
+    function reportBatch(res, doneKey) {
+      const failures = res.failures || [];
+      if (!failures.length) { setStatus(t(doneKey, { count: res.done })); return; }
+      const MAX_LISTED = 8;
+      const lines = [t('sftp.batchPartial', { done: res.done, total: res.total, failed: failures.length })];
+      failures.slice(0, MAX_LISTED).forEach((f) => lines.push(`${f.path} — ${I18n.err(f.error)}`));
+      if (failures.length > MAX_LISTED) lines.push(t('sftp.uploadMoreFailed', { count: failures.length - MAX_LISTED }));
+      setStatus(lines.join('\n'), true);
     }
+
+    async function runBatch(op, paths, dest) {
+      return api(`/api/sftp/${sess.id}/batch`, { method: 'POST', body: JSON.stringify({ op, paths, dest }) });
+    }
+
+    // Streams a zip of the selection to disk. A hidden form POST (into a
+    // hidden iframe, so an error page can't replace the app) avoids holding
+    // the archive in browser memory and avoids URL length limits.
+    function downloadZip(paths, zipName) {
+      let frame = document.getElementById('sftp-dl-frame');
+      if (!frame) {
+        frame = document.createElement('iframe');
+        frame.id = 'sftp-dl-frame';
+        frame.name = 'sftp-dl-frame';
+        frame.style.display = 'none';
+        document.body.appendChild(frame);
+      }
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = `/api/sftp/${sess.id}/archive`;
+      form.target = 'sftp-dl-frame';
+      form.style.display = 'none';
+      for (const [k, v] of [['paths', JSON.stringify(paths)], ['name', zipName]]) {
+        const inp = document.createElement('input');
+        inp.type = 'hidden';
+        inp.name = k;
+        inp.value = v;
+        form.appendChild(inp);
+      }
+      document.body.appendChild(form);
+      form.submit();
+      form.remove();
+    }
+
+    batchBar.addEventListener('click', async (e) => {
+      const btn = e.target.closest('button[data-batch]');
+      if (!btn) return;
+      const act = btn.dataset.batch;
+      const items = selectedEntries();
+      if (act === 'clear') { tab.selected.clear(); renderEntries(); return; }
+      if (!items.length) return;
+      const paths = items.map((x) => x.path);
+
+      if (act === 'copy' || act === 'move') {
+        sftpClipboard[sess.id] = { op: act, paths };
+        setStatus(t(act === 'move' ? 'sftp.clipMove' : 'sftp.clipCopy', { count: paths.length }));
+        tab.selected.clear();
+        // other SFTP tabs of this session need to show the paste button too
+        state.openTabs.forEach((x) => { if (x.kind === 'sftp' && x.sessionId === sess.id && x.refreshLang) x.refreshLang(); });
+        return;
+      }
+
+      if (act === 'download') {
+        if (items.length === 1 && !items[0].isDir) {
+          window.location.href = `/api/sftp/${sess.id}/download?path=${encodeURIComponent(items[0].path)}`;
+          return;
+        }
+        const base = items.length === 1 ? items[0].name : (tab.cwd.replace(/\/+$/, '').split('/').pop() || 'download');
+        downloadZip(paths, base + '.zip');
+        setStatus(t('sftp.zipStarted', { count: paths.length }));
+        return;
+      }
+
+      if (act === 'remove') {
+        const msg = items.length === 1
+          ? t(items[0].isDir ? 'sftp.confirmDeleteDir' : 'sftp.confirmDelete', { name: items[0].name })
+          : t('sftp.confirmDeleteN', { count: items.length, dirs: items.filter((x) => x.isDir).length });
+        if (!confirm(msg)) return;
+        setStatus(t('sftp.working'));
+        try {
+          const res = await runBatch('remove', paths);
+          tab.selected.clear();
+          await load(tab.cwd);
+          reportBatch(res, 'sftp.deletedN');
+        } catch (err) { setStatus(err.message, true); }
+      }
+    });
+
+    pasteBtn.onclick = async () => {
+      const clip = sftpClipboard[sess.id];
+      if (!clip) return;
+      setStatus(t('sftp.working'));
+      try {
+        const res = await runBatch(clip.op, clip.paths, tab.cwd);
+        // A cut is one-shot: what moved is gone from its old place. Anything
+        // that failed stays on the clipboard so it can be retried elsewhere.
+        if (clip.op === 'move') {
+          const failed = new Set((res.failures || []).map((f) => f.path));
+          clip.paths = clip.paths.filter((x) => failed.has(x));
+          if (!clip.paths.length) delete sftpClipboard[sess.id];
+        }
+        await load(tab.cwd);
+        reportBatch(res, clip.op === 'move' ? 'sftp.movedN' : 'sftp.copiedN');
+        state.openTabs.forEach((x) => { if (x.kind === 'sftp' && x.sessionId === sess.id && x.refreshLang) x.refreshLang(); });
+      } catch (err) { setStatus(err.message, true); }
+    };
 
     pane.querySelector('.sftp-up').onclick = () => {
       const parent = tab.cwd.replace(/\/+$/, '').split('/').slice(0, -1).join('/') || '/';
@@ -1433,39 +2167,81 @@
         load(tab.cwd);
       } catch (err) { setStatus(err.message, true); }
     };
-    // ---- upload with progress / speed / ETA ----
-    // One XMLHttpRequest per file (fetch() can't report upload progress),
-    // run one after another. Overall progress = bytes of finished files +
-    // bytes sent of the current one; speed is a smoothed rate over that
-    // overall figure, so it stays continuous across file boundaries.
-    let currentXhr = null;
+
+    // ---- upload: files / folders / drag & drop, several in parallel ----
+    // Items are {file, rel}; rel is the path below the target folder
+    // ("a.txt" or "folder/sub/a.txt"). They are packed into tasks (one
+    // XMLHttpRequest each — fetch() can't report upload progress) and a
+    // pool of `concurrency` workers runs the tasks. Overall progress is the
+    // sum of every task's bytes sent; speed is a smoothed rate over that
+    // sum, sampled on a timer so it decays to 0 when the transfer stalls.
+    concInput.value = String(loadConcurrency());
+    concInput.addEventListener('change', () => {
+      const n = clampConcurrency(concInput.value);
+      concInput.value = String(n);
+      try { localStorage.setItem(SFTP_CONC_KEY, String(n)); } catch (_) {}
+    });
+
+    let uploading = false;
     let cancelRequested = false;
     let hideTimer = null;
+    const activeXhrs = new Set();
 
-    function uploadOne(file, dir, onProgress, onSent) {
+    function setUploadBusy(busy) {
+      uploading = busy;
+      uploadInput.disabled = busy;
+      folderInput.disabled = busy;
+      concInput.disabled = busy;
+      uploadLabels.forEach((l) => l.classList.toggle('disabled', busy));
+    }
+
+    function buildTasks(items) {
+      const tasks = [];
+      let cur = null;
+      const flush = () => { if (cur && cur.items.length) tasks.push(cur); cur = null; };
+      for (const it of items) {
+        if (it.file.size >= UPLOAD_SOLO_BYTES) {
+          flush();
+          tasks.push({ items: [it], bytes: it.file.size, loaded: 0 });
+          continue;
+        }
+        if (cur && (cur.bytes + it.file.size > UPLOAD_BATCH_BYTES || cur.items.length >= UPLOAD_BATCH_FILES)) flush();
+        if (!cur) cur = { items: [], bytes: 0, loaded: 0 };
+        cur.items.push(it);
+        cur.bytes += it.file.size;
+      }
+      flush();
+      return tasks;
+    }
+
+    function postTask(task, dir, onProgress) {
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
-        currentXhr = xhr;
+        activeXhrs.add(xhr);
+        const settle = (fn, v) => { activeXhrs.delete(xhr); fn(v); };
         xhr.open('POST', `/api/sftp/${sess.id}/upload?path=${encodeURIComponent(dir)}`);
         xhr.withCredentials = true;
-        xhr.upload.onprogress = (e) => {
-          // e.loaded also counts the few hundred bytes of multipart framing.
-          onProgress(Math.min(e.loaded, file.size));
-        };
-        // Fires when the browser has sent the whole body; the server may
-        // still be flushing the tail to the remote host.
-        xhr.upload.onload = () => onSent();
+        // e.loaded also counts the multipart framing, hence the clamp.
+        xhr.upload.onprogress = (e) => onProgress(Math.min(e.loaded, task.bytes));
         xhr.onload = () => {
-          if (xhr.status === 401) { showLogin(); reject(new Error('unauthorized')); return; }
-          if (xhr.status >= 200 && xhr.status < 300) { resolve(); return; }
+          if (xhr.status === 401) { showLogin(); const e401 = new Error('unauthorized'); e401.fatal = true; settle(reject, e401); return; }
+          if (xhr.status >= 200 && xhr.status < 300) { settle(resolve); return; }
           let msg = xhr.statusText || `HTTP ${xhr.status}`;
           try { msg = JSON.parse(xhr.responseText).error || msg; } catch (_) {}
-          reject(new Error(msg));
+          settle(reject, new Error(msg));
         };
-        xhr.onerror = () => reject(new Error(t('sftp.connectionLost')));
-        xhr.onabort = () => { const err = new Error('cancelled'); err.cancelled = true; reject(err); };
+        xhr.onerror = () => settle(reject, new Error(t('sftp.connectionLost')));
+        xhr.onabort = () => { const err = new Error('cancelled'); err.cancelled = true; settle(reject, err); };
         const form = new FormData();
-        form.append('file', file, file.name);
+        // The relative path travels in its own "relpath" field right before
+        // each file, NOT in the multipart filename: browsers may rewrite a
+        // filename containing "/" (e.g. Chrome turns it into ":"), which
+        // flattened dropped/selected folders on the server. The server
+        // creates the parent folders and sanitizes the path.
+        for (const it of task.items) {
+          form.append('relpath', it.rel);
+          form.append('file', it.file, it.file.name);
+        }
         xhr.send(form);
       });
     }
@@ -1479,34 +2255,39 @@
     }
     const fmtSpeed = (bps) => `${formatBytes(Math.round(bps))}/s`;
 
-    async function uploadFiles(fileList) {
-      const files = Array.from(fileList);
+    async function runUpload(items, emptyDirs) {
+      emptyDirs = emptyDirs || [];
+      if (items.length === 0 && emptyDirs.length === 0) return;
+      if (uploading) { setStatus(t('sftp.uploadBusy'), true); return; }
+
       const dir = tab.cwd; // pin the destination even if the user browses elsewhere meanwhile
-      const totalBytes = files.reduce((sum, f) => sum + f.size, 0);
-      let doneBytes = 0;      // bytes of fully uploaded files
-      let curBytes = 0;       // overall bytes sent so far
-      let index = 0;          // 1-based index of the file in flight
-      let curName = '';
-      let sentAll = false;    // current file fully sent, waiting on the server
-      let speed = 0;          // smoothed bytes/sec
+      const concurrency = clampConcurrency(concInput.value);
+      const tasks = buildTasks(items);
+      const totalFiles = items.length;
+      const totalBytes = items.reduce((sum, it) => sum + it.file.size, 0);
+      let curBytes = 0;        // overall bytes sent so far
+      let doneFiles = 0;
+      let active = 0;
+      let curName = items.length ? items[0].rel : '';
+      let speed = 0;           // smoothed bytes/sec
       let lastTickT = performance.now(), lastTickB = 0;
       const startT = performance.now();
-      let completed = 0;
+      const failures = [];     // {name, message} for files that could not be uploaded
+      let fatal = false;       // e.g. logged out: no point trying the rest
 
       clearTimeout(hideTimer);
       cancelRequested = false;
-      uploadInput.disabled = true;
-      uploadLabel.classList.add('disabled');
+      setUploadBusy(true);
       xferEl.classList.remove('hidden', 'error', 'done');
       xferCancel.classList.remove('hidden');
       setStatus('');
 
       function render() {
-        const pct = totalBytes > 0 ? Math.min(100, (curBytes / totalBytes) * 100) : 0;
+        const pct = totalBytes > 0 ? Math.min(100, (curBytes / totalBytes) * 100) : (totalFiles > 0 ? (doneFiles / totalFiles) * 100 : 0);
         xferFill.style.width = `${pct}%`;
-        xferTitle.textContent = t('sftp.uploading', { index, total: files.length, name: curName });
+        xferTitle.textContent = t('sftp.uploadingN', { done: doneFiles, total: totalFiles, active, name: curName });
         const parts = [`${pct.toFixed(1)}%`, `${formatBytes(curBytes)} / ${formatBytes(totalBytes)}`];
-        if (sentAll && index === files.length && curBytes >= totalBytes) {
+        if (totalBytes > 0 && curBytes >= totalBytes && doneFiles < totalFiles) {
           parts.push(t('sftp.finalizing'));
         } else {
           parts.push(fmtSpeed(speed));
@@ -1515,9 +2296,6 @@
         xferDetail.textContent = parts.join(' · ');
       }
 
-      // Speed is sampled on a timer, not per progress event: events stop
-      // entirely when the transfer stalls, and the readout must decay to 0
-      // instead of freezing on the last good number.
       const ticker = setInterval(() => {
         const now = performance.now();
         const dt = (now - lastTickT) / 1000;
@@ -1526,61 +2304,186 @@
         lastTickT = now; lastTickB = curBytes;
         render();
       }, 500);
+      render();
+
+      const abortAll = () => { for (const x of Array.from(activeXhrs)) x.abort(); };
+      xferCancel.onclick = () => { cancelRequested = true; abortAll(); };
 
       try {
-        for (const file of files) {
-          if (cancelRequested) { const e = new Error('cancelled'); e.cancelled = true; throw e; }
-          index++;
-          curName = file.name;
-          sentAll = false;
-          render();
-          await uploadOne(
-            file, dir,
-            (loaded) => { curBytes = doneBytes + loaded; render(); },
-            () => { sentAll = true; render(); },
-          );
-          doneBytes += file.size;
-          curBytes = doneBytes;
-          completed++;
+        // Empty folders have no file to carry them, so create them directly.
+        for (const rel of emptyDirs) {
+          if (cancelRequested || fatal) break;
+          try {
+            await api(`/api/sftp/${sess.id}/mkdir`, { method: 'POST', body: JSON.stringify({ path: dir.replace(/\/$/, '') + '/' + rel }) });
+          } catch (err) { failures.push({ name: rel + '/', message: err.message }); }
         }
+
+        // Run one task. A failed multi-file request can't tell us which of
+        // its files made it, so it is retried file by file: files that
+        // succeed stay on the server and only the ones that really fail
+        // end up in the failure report.
+        const runTask = async (task) => {
+          active++;
+          curName = task.items[0].rel;
+          try {
+            await postTask(task, dir, (loaded) => {
+              curBytes += loaded - task.loaded;
+              task.loaded = loaded;
+            });
+            curBytes += task.bytes - task.loaded;
+            task.loaded = task.bytes;
+            doneFiles += task.items.length;
+            return;
+          } catch (err) {
+            curBytes -= task.loaded; // this attempt's progress no longer counts
+            task.loaded = 0;
+            if (err.cancelled) return;
+            if (err.fatal) { fatal = true; failures.push({ name: task.items[0].rel, message: err.message }); return; }
+            if (task.items.length === 1) {
+              failures.push({ name: task.items[0].rel, message: err.message });
+              return;
+            }
+          } finally {
+            active--;
+          }
+          for (const it of task.items) {
+            if (cancelRequested || fatal) return;
+            await runTask({ items: [it], bytes: it.file.size, loaded: 0 });
+          }
+        };
+
+        let next = 0;
+        const worker = async () => {
+          while (!cancelRequested && !fatal) {
+            const task = tasks[next++];
+            if (!task) return;
+            await runTask(task);
+          }
+        };
+        if (!fatal) await Promise.all(Array.from({ length: Math.min(concurrency, tasks.length) }, worker));
         clearInterval(ticker);
-        const secs = (performance.now() - startT) / 1000;
-        xferFill.style.width = '100%';
-        xferEl.classList.add('done');
-        xferCancel.classList.add('hidden');
-        xferTitle.textContent = t('sftp.uploadComplete', { count: completed });
-        xferDetail.textContent = t('sftp.uploadSummary', { size: formatBytes(totalBytes), time: fmtDuration(secs), speed: fmtSpeed(secs > 0 ? totalBytes / secs : 0) });
-        hideTimer = setTimeout(() => xferEl.classList.add('hidden'), 8000);
-      } catch (err) {
-        clearInterval(ticker);
-        xferCancel.classList.add('hidden');
-        if (err.cancelled) {
+
+        if (cancelRequested) {
+          xferCancel.classList.add('hidden');
           xferTitle.textContent = t('sftp.uploadCancelled');
-          xferDetail.textContent = t('sftp.uploadCancelledDetail', { done: completed, total: files.length, name: curName });
-        } else {
+          xferDetail.textContent = t('sftp.uploadCancelledDetail', { done: doneFiles, total: totalFiles });
+        } else if (failures.length) {
+          // Everything that could be uploaded was; report only what failed.
+          xferCancel.classList.add('hidden');
           xferEl.classList.add('error');
-          xferTitle.textContent = t('sftp.uploadFailed', { name: curName });
-          xferDetail.textContent = `${err.message}${completed ? t('sftp.earlierUploaded', { count: completed }) : ''}`;
+          xferTitle.textContent = t('sftp.uploadPartial', { done: doneFiles, total: totalFiles, failed: failures.length });
+          const MAX_LISTED = 8;
+          const lines = failures.slice(0, MAX_LISTED).map((f) => `${f.name}: ${f.message}`);
+          if (failures.length > MAX_LISTED) lines.push(t('sftp.uploadMoreFailed', { count: failures.length - MAX_LISTED }));
+          xferDetail.textContent = lines.join('\n');
+        } else {
+          const secs = (performance.now() - startT) / 1000;
+          xferFill.style.width = '100%';
+          xferEl.classList.add('done');
+          xferCancel.classList.add('hidden');
+          xferTitle.textContent = t('sftp.uploadComplete', { count: doneFiles });
+          xferDetail.textContent = t('sftp.uploadSummary', { size: formatBytes(totalBytes), time: fmtDuration(secs), speed: fmtSpeed(secs > 0 ? totalBytes / secs : 0) });
+          hideTimer = setTimeout(() => xferEl.classList.add('hidden'), 8000);
         }
       } finally {
-        currentXhr = null;
+        clearInterval(ticker);
+        activeXhrs.clear();
         uploadInput.value = '';
-        uploadInput.disabled = false;
-        uploadLabel.classList.remove('disabled');
+        folderInput.value = '';
+        setUploadBusy(false);
         load(tab.cwd);
       }
     }
 
-    xferCancel.onclick = () => {
-      cancelRequested = true;
-      if (currentXhr) currentXhr.abort();
-    };
-
     uploadInput.addEventListener('change', () => {
-      const fileList = uploadInput.files;
-      if (!fileList || fileList.length === 0) return;
       // Copy out of the live FileList before the input is reset in finally{}.
-      uploadFiles(Array.from(fileList));
+      const files = Array.from(uploadInput.files || []);
+      if (files.length) runUpload(files.map((f) => ({ file: f, rel: f.name })), []);
+    });
+    folderInput.addEventListener('change', () => {
+      const files = Array.from(folderInput.files || []);
+      if (files.length) runUpload(files.map((f) => ({ file: f, rel: f.webkitRelativePath || f.name })), []);
+    });
+
+    // ---- drag & drop (files and whole folders) ----
+    async function collectDropped(entries) {
+      const files = [];
+      const emptyDirs = [];
+      const readAll = (reader) => new Promise((resolve, reject) => {
+        const all = [];
+        (function more() {
+          reader.readEntries((batch) => {
+            if (!batch.length) resolve(all);
+            else { all.push(...batch); more(); }
+          }, reject);
+        })();
+      });
+      async function walk(entry, prefix) {
+        if (entry.isFile) {
+          const file = await new Promise((resolve, reject) => entry.file(resolve, reject));
+          files.push({ file, rel: prefix + entry.name });
+        } else if (entry.isDirectory) {
+          const kids = await readAll(entry.createReader());
+          const rel = prefix + entry.name;
+          if (!kids.length) emptyDirs.push(rel);
+          for (const k of kids) await walk(k, rel + '/');
+        }
+      }
+      for (const e of entries) await walk(e, '');
+      return { files, emptyDirs };
+    }
+
+    const hasFiles = (e) => !!(e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files'));
+    let dragDepth = 0;
+    pane.addEventListener('dragenter', (e) => {
+      if (!hasFiles(e)) return; // tab reordering drags carry no files
+      e.preventDefault();
+      dragDepth++;
+      pane.classList.add('drop-active');
+      if (!uploading) setStatus(t('sftp.dropHint'));
+    });
+    pane.addEventListener('dragover', (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    });
+    pane.addEventListener('dragleave', (e) => {
+      if (!hasFiles(e)) return;
+      dragDepth = Math.max(0, dragDepth - 1);
+      if (dragDepth === 0) {
+        pane.classList.remove('drop-active');
+        if (!uploading) setStatus('');
+      }
+    });
+    pane.addEventListener('drop', async (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      dragDepth = 0;
+      pane.classList.remove('drop-active');
+      if (uploading) { setStatus(t('sftp.uploadBusy'), true); return; }
+      const dt = e.dataTransfer;
+      // webkitGetAsEntry must be called before the first await: the
+      // DataTransfer is emptied once the event handler yields.
+      const entries = [];
+      for (const it of Array.from(dt.items || [])) {
+        if (it.kind !== 'file') continue;
+        const en = it.webkitGetAsEntry ? it.webkitGetAsEntry() : null;
+        if (en) entries.push(en);
+      }
+      const plain = Array.from(dt.files || []);
+      if (entries.length === 0) {
+        setStatus('');
+        runUpload(plain.map((f) => ({ file: f, rel: f.name })), []);
+        return;
+      }
+      setStatus(t('sftp.scanning'));
+      try {
+        const res = await collectDropped(entries);
+        setStatus('');
+        runUpload(res.files, res.emptyDirs);
+      } catch (err) {
+        setStatus(err.message || String(err), true);
+      }
     });
 
     load('.');
@@ -1606,6 +2509,9 @@
     populateGroupSelect();
     renderTree();
     renderTunnels();
+    renderTabBar();
+    refreshTabStatusTexts();
+    for (const tb of state.openTabs) if (tb.refreshLang) tb.refreshLang();
     if (state.layout !== 'single') {
       renderSplitSelects();
       applyPaneAssignments();
